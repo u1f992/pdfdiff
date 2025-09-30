@@ -20,42 +20,46 @@
 import * as jimp from "jimp";
 /** @typedef {jimp.JimpInstance} JimpInstance */
 
-import { drawDifference } from "./diff.js";
-import { alignSize, composeLayers } from "./image.js";
+import { drawDifference, type Pallet } from "./diff.js";
+import { composeLayers, type AlignStrategy } from "./image.js";
+import type { JimpInstance } from "./jimp.js";
 
-addEventListener("message", async (e) => {
-  const { bufA, bufB, bufMask, pallet, align } =
-    /** @type {{bufA: ArrayBuffer, bufB: ArrayBuffer, bufMask: ArrayBuffer, pallet: import("./diff.js").Pallet, align: import("./image.js").AlignStrategy}} */ (
-      e.data
-    );
-  const [a, b, mask] = alignSize(
-    [
-      /** @type {JimpInstance} */ (await jimp.Jimp.fromBuffer(bufA)),
-      /** @type {JimpInstance} */ (await jimp.Jimp.fromBuffer(bufB)),
-      /** @type {JimpInstance} */ (await jimp.Jimp.fromBuffer(bufMask)),
-    ],
-    align,
-  );
-  const {
-    diff: diffLayer,
-    addition,
-    deletion,
-    modification,
-  } = drawDifference(a, b, mask, pallet);
-  const diff = composeLayers(a.width, a.height, [
-    [a, 0.2],
-    [b, 0.2],
-    [diffLayer, 1],
-  ]);
-  const bufDiff = new Uint8Array(await diff.getBuffer(jimp.JimpMime.png))
-    .buffer;
-  postMessage(
-    {
-      bufDiff,
+self.addEventListener(
+  "message",
+  async (
+    e: MessageEvent<{
+      bufA: ArrayBuffer;
+      bufB: ArrayBuffer;
+      bufMask: ArrayBuffer;
+      pallet: Pallet;
+      align: AlignStrategy;
+    }>,
+  ) => {
+    const { bufA, bufB, bufMask, pallet, align } = e.data;
+    const a = (await jimp.Jimp.fromBuffer(bufA)) as JimpInstance;
+    const b = (await jimp.Jimp.fromBuffer(bufB)) as JimpInstance;
+    const mask = (await jimp.Jimp.fromBuffer(bufMask)) as JimpInstance;
+    const {
+      diff: diffLayer,
       addition,
       deletion,
       modification,
-    },
-    [bufDiff],
-  );
-});
+    } = drawDifference(a, b, mask, pallet, align);
+    const diff = composeLayers(a.width, a.height, [
+      [a, 0.2],
+      [b, 0.2],
+      [diffLayer, 1],
+    ]);
+    const bufDiff = new Uint8Array(await diff.getBuffer(jimp.JimpMime.png))
+      .buffer;
+    self.postMessage(
+      {
+        bufDiff,
+        addition,
+        deletion,
+        modification,
+      },
+      [bufDiff],
+    );
+  },
+);

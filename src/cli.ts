@@ -35,12 +35,12 @@ const {
   positionals,
   values: {
     dpi: dpi_,
-    alpha,
+    alpha: alpha_,
     mask: mask_,
-    align,
-    "addition-color": additionColor,
-    "deletion-color": deletionColor,
-    "modification-color": modificationColor,
+    align: align_,
+    "addition-color": additionColorHex,
+    "deletion-color": deletionColorHex,
+    "modification-color": modificationColorHex,
     version,
     help,
   },
@@ -95,35 +95,46 @@ if (version) {
 if (positionals.length !== 3) {
   throw new Error("Expected 3 positional arguments: <A> <B> <OUTDIR>");
 }
-const [pdfA, pdfB] = positionals
-  .slice(0, 2)
-  .map((s) => new Uint8Array(fs.readFileSync(path.resolve(s))));
-const outDir = path.resolve(positionals[2]);
 
-const dpi = typeof dpi_ !== "undefined" ? parseInt(dpi_, 10) : undefined;
-if (typeof dpi !== "undefined" && Number.isNaN(dpi)) {
+const pdfA = fs.readFileSync(path.resolve(positionals[0]!));
+const pdfB = fs.readFileSync(path.resolve(positionals[1]!));
+const outDir = path.resolve(positionals[2]!);
+
+const dpi =
+  typeof dpi_ !== "undefined" ? parseInt(dpi_, 10) : defaultOptions.dpi;
+if (Number.isNaN(dpi)) {
   throw new Error("Invalid DPI value");
 }
 
+const alpha = alpha_ ?? defaultOptions.alpha;
+
 const pdfMask =
   typeof mask_ !== "undefined"
-    ? new Uint8Array(fs.readFileSync(path.resolve(mask_)))
+    ? fs.readFileSync(path.resolve(mask_))
     : undefined;
 
-if (typeof align !== "undefined" && !isValidAlignStrategy(align)) {
+const align = align_ ?? defaultOptions.align;
+if (!isValidAlignStrategy(align)) {
   throw new Error(`Invalid alignment strategy`);
 }
 
-const addition =
-  typeof additionColor !== "undefined" ? parseHex(additionColor) : undefined;
-const deletion =
-  typeof deletionColor !== "undefined" ? parseHex(deletionColor) : undefined;
-const modification =
-  typeof modificationColor !== "undefined"
-    ? parseHex(modificationColor)
-    : undefined;
-// NOTE: undefined !== null
-if (addition === null || deletion === null || modification === null) {
+const additionColor =
+  typeof additionColorHex !== "undefined"
+    ? parseHex(additionColorHex)
+    : defaultOptions.pallet.addition;
+const deletionColor =
+  typeof deletionColorHex !== "undefined"
+    ? parseHex(deletionColorHex)
+    : defaultOptions.pallet.deletion;
+const modificationColor =
+  typeof modificationColorHex !== "undefined"
+    ? parseHex(modificationColorHex)
+    : defaultOptions.pallet.modification;
+if (
+  additionColor === null ||
+  deletionColor === null ||
+  modificationColor === null
+) {
   throw new Error("Invalid color format");
 }
 
@@ -137,6 +148,11 @@ for await (const [
     alpha,
     mask: pdfMask,
     align,
+    pallet: {
+      addition: additionColor,
+      deletion: deletionColor,
+      modification: modificationColor,
+    },
   }),
   1,
 )) {

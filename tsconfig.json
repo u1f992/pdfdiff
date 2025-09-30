@@ -9,11 +9,10 @@
     // See also https://aka.ms/tsconfig/module
     "module": "esnext",
     "target": "esnext",
-    "lib": ["ESNext", "WebWorker", "DOM"],
-    "types": [],
+    // "types": [],
     // For nodejs:
-    // "lib": ["esnext"],
-    // "types": ["node"],
+    "lib": ["esnext", "WebWorker", "DOM"],
+    "types": ["node"],
     // and npm install -D @types/node
 
     // Other Outputs

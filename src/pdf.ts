@@ -18,25 +18,19 @@
  */
 
 import * as jimp from "jimp";
-/** @typedef {jimp.JimpInstance} JimpInstance */
 import * as mupdf from "mupdf";
 
-/**
- * @param {mupdf.Document} pdf
- */
-export function* loadPages(pdf) {
+export function* loadPages(pdf: mupdf.Document) {
   for (let i = 0; i < pdf.countPages(); i++) {
     yield pdf.loadPage(i);
   }
 }
 
-/**
- * @param {mupdf.Page} page
- * @param {number} dpi
- * @param {boolean} alpha
- */
-export async function pageToImage(page, dpi, alpha) {
-  // https://mupdfjs.readthedocs.io/en/latest/how-to-guide/migration/index.html#from-andytango-mupdf-js
+export async function pageToImage(
+  page: mupdf.Page,
+  dpi: number,
+  alpha: boolean,
+) {
   const zoom = dpi / 72;
   const pixmap = page.toPixmap(
     [zoom, 0, 0, zoom, 0, 0],

@@ -17,30 +17,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/**
- * @typedef {[number, number, number, number]} RGBAColor
- */
+export type RGBAColor = [number, number, number, number];
 
-/**
- * @param {string} hex
- * @returns {RGBAColor | null}
- */
-export const parseHex = (hex) => {
+export const parseHex = (hex: string) => {
   if (/^#([0-9a-fA-F]{3})$/.test(hex)) {
     return [
-      parseInt(hex[1] + hex[1], 16),
-      parseInt(hex[2] + hex[2], 16),
-      parseInt(hex[3] + hex[3], 16),
+      parseInt(hex[1]! + hex[1]!, 16),
+      parseInt(hex[2]! + hex[2]!, 16),
+      parseInt(hex[3]! + hex[3]!, 16),
       255,
-    ];
+    ] as RGBAColor;
   }
   if (/^#([0-9a-fA-F]{4})$/.test(hex)) {
     return [
-      parseInt(hex[1] + hex[1], 16),
-      parseInt(hex[2] + hex[2], 16),
-      parseInt(hex[3] + hex[3], 16),
-      parseInt(hex[4] + hex[4], 16),
-    ];
+      parseInt(hex[1]! + hex[1]!, 16),
+      parseInt(hex[2]! + hex[2]!, 16),
+      parseInt(hex[3]! + hex[3]!, 16),
+      parseInt(hex[4]! + hex[4]!, 16),
+    ] as RGBAColor;
   }
   if (/^#([0-9a-fA-F]{6})$/.test(hex)) {
     return [
@@ -48,7 +42,7 @@ export const parseHex = (hex) => {
       parseInt(hex.slice(3, 5), 16),
       parseInt(hex.slice(5, 7), 16),
       255,
-    ];
+    ] as RGBAColor;
   }
   if (/^#([0-9a-fA-F]{8})$/.test(hex)) {
     return [
@@ -56,15 +50,12 @@ export const parseHex = (hex) => {
       parseInt(hex.slice(3, 5), 16),
       parseInt(hex.slice(5, 7), 16),
       parseInt(hex.slice(7, 9), 16),
-    ];
+    ] as RGBAColor;
   }
   return null;
 };
 
-/**
- * @param {Readonly<RGBAColor>} rgba
- */
-export const formatHex = ([r, g, b, a]) =>
+export const formatHex = ([r, g, b, a]: RGBAColor) =>
   "#" +
   [r, g, b, a]
     .map((v) => {

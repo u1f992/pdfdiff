@@ -18,38 +18,37 @@
  */
 
 import * as jimp from "jimp";
-/** @typedef {jimp.JimpInstance} JimpInstance */
+import { type JimpInstance } from "./jimp.js";
 
-/**
- * @param {number} width
- * @param {number} height
- */
-export function createEmptyImage(width, height) {
+export function createEmptyImage(width: number, height: number) {
   return new jimp.Jimp({
     width,
     height,
     color: jimp.rgbaToInt(0, 0, 0, 0),
-  });
+  }) as JimpInstance;
 }
 
-/**
- * @overload
- * @param {[JimpInstance, JimpInstance] | [JimpInstance, null] | [null, JimpInstance]} images
- * @returns {[JimpInstance, JimpInstance]}
- *
- * @overload
- * @param {[JimpInstance, JimpInstance, JimpInstance] | [JimpInstance, JimpInstance, null] | [JimpInstance, null, JimpInstance] | [JimpInstance, null, null] | [null, JimpInstance, JimpInstance] | [null, JimpInstance, null] | [null, null, JimpInstance]} images
- * @returns {[JimpInstance, JimpInstance, JimpInstance]}
- *
- * @param {(JimpInstance | null)[]} images
- * @returns {JimpInstance[]}
- */
-export function fillWithEmpty(images) {
+export function fillWithEmpty(
+  images:
+    | [JimpInstance, JimpInstance]
+    | [JimpInstance, null]
+    | [null, JimpInstance],
+): [JimpInstance, JimpInstance];
+export function fillWithEmpty(
+  images:
+    | [JimpInstance, JimpInstance, JimpInstance]
+    | [JimpInstance, JimpInstance, null]
+    | [JimpInstance, null, JimpInstance]
+    | [JimpInstance, null, null]
+    | [null, JimpInstance, JimpInstance]
+    | [null, JimpInstance, null]
+    | [null, null, JimpInstance],
+): [JimpInstance, JimpInstance, JimpInstance];
+export function fillWithEmpty(images: (JimpInstance | null)[]): JimpInstance[] {
   return images.map((img) => (img !== null ? img : createEmptyImage(1, 1)));
 }
 
-/** @type {["resize", "top-left", "top-center", "top-right", "middle-left", "middle-center", "middle-right", "bottom-left", "bottom-center", "bottom-right"]} */
-const alignStrategyValues = [
+const alignStrategyValues = new Set([
   "resize",
   "top-left",
   "top-center",
@@ -60,25 +59,18 @@ const alignStrategyValues = [
   "bottom-left",
   "bottom-center",
   "bottom-right",
-];
-/**
- * @typedef {typeof alignStrategyValues[number]} AlignStrategy
- */
+] as const);
+type UnwrapSet<T> = T extends Set<infer U> ? U : never;
+export type AlignStrategy = UnwrapSet<typeof alignStrategyValues>;
+export const isValidAlignStrategy = (str: string): str is AlignStrategy =>
+  (alignStrategyValues as Set<string>).has(str);
 
-/**
- * @param {string} str
- * @returns {str is AlignStrategy}
- */
-export const isValidAlignStrategy = (str) =>
-  /** @type {string[]} */ (alignStrategyValues).includes(str);
-
-/**
- * @param {JimpInstance} img
- * @param {number} targetWidth
- * @param {number} targetHeight
- * @param {AlignStrategy} align
- */
-function alignImage(img, targetWidth, targetHeight, align) {
+function alignImage(
+  img: JimpInstance,
+  targetWidth: number,
+  targetHeight: number,
+  align: AlignStrategy,
+) {
   if (align === "resize") {
     return img.resize({ w: targetWidth, h: targetHeight });
   } else {
@@ -98,28 +90,23 @@ function alignImage(img, targetWidth, targetHeight, align) {
   }
 }
 
-/**
- * @overload
- * @param {[JimpInstance, JimpInstance]} images
- * @param {AlignStrategy} align
- * @returns {[JimpInstance, JimpInstance]}
- *
- * @overload
- * @param {[JimpInstance, JimpInstance, JimpInstance]} images
- * @param {AlignStrategy} align
- * @returns {[JimpInstance, JimpInstance, JimpInstance]}
- *
- * @param {JimpInstance[]} images
- * @param {AlignStrategy} align
- * @returns {JimpInstance[]}
- */
-export function alignSize(images, align) {
+export function alignSize(
+  images: [JimpInstance, JimpInstance],
+  align: AlignStrategy,
+): [JimpInstance, JimpInstance];
+export function alignSize(
+  images: [JimpInstance, JimpInstance, JimpInstance],
+  align: AlignStrategy,
+): [JimpInstance, JimpInstance, JimpInstance];
+export function alignSize(
+  images: JimpInstance[],
+  align: AlignStrategy,
+): JimpInstance[] {
   if (images.length === 0) {
     return [];
   }
   const largerWidth = Math.max(...images.map((img) => img.width));
   const largerHeight = Math.max(...images.map((img) => img.height));
-  // @ts-expect-error
   return images.map((img) =>
     img.width === largerWidth && img.height === largerHeight
       ? img
@@ -127,12 +114,11 @@ export function alignSize(images, align) {
   );
 }
 
-/**
- * @param {number} canvasWidth
- * @param {number} canvasHeight
- * @param {[JimpInstance, number][]} layers
- */
-export function composeLayers(canvasWidth, canvasHeight, layers) {
+export function composeLayers(
+  canvasWidth: number,
+  canvasHeight: number,
+  layers: [JimpInstance, number][],
+) {
   return layers.reduce(
     (acc, [image, opacity]) =>
       acc.composite(image, 0, 0, {
