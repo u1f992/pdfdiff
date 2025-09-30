@@ -1,9 +1,10 @@
-import { nodeResolve } from "@rollup/plugin-node-resolve";
-import commonjs from "@rollup/plugin-commonjs";
 import alias from "@rollup/plugin-alias";
+import commonjs from "@rollup/plugin-commonjs";
+import { nodeResolve } from "@rollup/plugin-node-resolve";
 import typescript from "@rollup/plugin-typescript";
+import path from "node:path";
+import { defineConfig } from "rollup";
 import copy from "rollup-plugin-copy";
-import path from "path";
 
 const plugins = [
   nodeResolve(),
@@ -26,12 +27,11 @@ const plugins = [
   }),
 ];
 
-export default [
+const rollupConfig = defineConfig([
   {
     input: "src/index.ts",
     output: {
       file: "dist/index.js",
-      format: "es",
       sourcemap: true,
     },
     plugins: [
@@ -51,10 +51,7 @@ export default [
           },
         ],
       }),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        sourceMap: true,
-      }),
+      typescript({ tsconfig: "./tsconfig.json" }),
       ...plugins,
     ],
   },
@@ -62,7 +59,6 @@ export default [
     input: "src/worker.ts",
     output: {
       file: "dist/worker.js",
-      format: "es",
       sourcemap: true,
     },
     plugins: [
@@ -76,10 +72,7 @@ export default [
           },
         ],
       }),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        sourceMap: true,
-      }),
+      typescript({ tsconfig: "./tsconfig.json" }),
       ...plugins,
     ],
   },
@@ -87,15 +80,10 @@ export default [
     input: "src/cli.ts",
     output: {
       file: "dist/cli.js",
-      format: "es",
       sourcemap: true,
-      banner: "#!/usr/bin/env node",
     },
     plugins: [
-      typescript({
-        tsconfig: "./tsconfig.json",
-        sourceMap: true,
-      }),
+      typescript({ tsconfig: "./tsconfig.json" }),
       nodeResolve(),
       commonjs(),
     ],
@@ -104,7 +92,6 @@ export default [
     input: "src/browser.ts",
     output: {
       file: "dist/browser.js",
-      format: "es",
       sourcemap: true,
     },
     plugins: [
@@ -124,11 +111,10 @@ export default [
           },
         ],
       }),
-      typescript({
-        tsconfig: "./tsconfig.json",
-        sourceMap: true,
-      }),
+      typescript({ tsconfig: "./tsconfig.json" }),
       ...plugins,
     ],
   },
-];
+]);
+
+export default rollupConfig;
