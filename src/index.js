@@ -19,16 +19,14 @@
 
 import * as jimp from "jimp";
 /** @typedef {jimp.JimpInstance} JimpInstance */
-import { from } from "ix/asynciterable";
-import { map, flatMap } from "ix/asynciterable/operators";
 import * as mupdf from "mupdf";
 import Worker from "web-worker";
 
 /** @typedef {import("./diff.js").Pallet} Pallet */
-import { fillWithEmpty, isValidAlignStrategy } from "./image.js";
+import { createEmptyImage, isValidAlignStrategy } from "./image.js";
 /** @typedef {import("./image.js").AlignStrategy} AlignStrategy */
-import { zipLongest, withIndex } from "./iterable.js";
-import { loadPages, pageToImage } from "./pdf.js";
+import { withIndex } from "./iterable.js";
+import { pageToImage } from "./pdf.js";
 import { parseHex, formatHex } from "./rgba-color.js";
 /** @typedef {import("./rgba-color.js").RGBAColor} RGBAColor */
 
@@ -63,7 +61,7 @@ export const defaultOptions = Object.freeze({
  * @typedef {{ a: JimpInstance, b: JimpInstance, diff: JimpInstance, addition: [number, number][], deletion: [number, number][], modification: [number, number][] }} VisualizeDifferencesResult
  * @returns {AsyncIterable<VisualizeDifferencesResult>}
  */
-export function visualizeDifferences(a, b, options) {
+export async function* visualizeDifferences(a, b, options) {
   /** @satisfies {VisualizeDifferencesOptions} */
   const mergedOptions = {
     dpi: options?.dpi ?? defaultOptions.dpi,
@@ -77,8 +75,6 @@ export function visualizeDifferences(a, b, options) {
         options?.pallet?.modification ?? defaultOptions.pallet.modification,
     },
   };
-  const pageToImageFn = (/** @type {mupdf.Page} */ page) =>
-    pageToImage(page, mergedOptions.dpi, mergedOptions.alpha);
 
   const pdfA = mupdf.PDFDocument.openDocument(a, "application/pdf");
   const pdfB = mupdf.PDFDocument.openDocument(b, "application/pdf");
@@ -86,44 +82,98 @@ export function visualizeDifferences(a, b, options) {
     typeof mergedOptions.mask !== "undefined"
       ? mupdf.PDFDocument.openDocument(mergedOptions.mask, "application/pdf")
       : new mupdf.PDFDocument();
-  return from(
-    zipLongest(
-      from(loadPages(pdfA)).pipe(map(pageToImageFn)),
-      from(loadPages(pdfB)).pipe(map(pageToImageFn)),
-      from(loadPages(pdfMask)).pipe(map(pageToImageFn)),
-    ),
-  ).pipe(
-    map(fillWithEmpty),
-    flatMap(async ([a, b, mask]) => {
-      // NOTE: getBufferはcopyなので、Workerに移譲した後もa, bを使用して問題ない
-      // https://github.com/jimp-dev/jimp/blob/b6b0e418a5f1259211a133b20cddb4f4e5c25679/packages/core/src/index.ts#L444
-      const bufA = new Uint8Array(await a.getBuffer(jimp.JimpMime.png)).buffer;
-      const bufB = new Uint8Array(await b.getBuffer(jimp.JimpMime.png)).buffer;
-      const bufMask = new Uint8Array(await mask.getBuffer(jimp.JimpMime.png))
-        .buffer;
-      const { bufDiff, addition, deletion, modification } =
-        await /** @type {Promise<{ bufDiff: ArrayBuffer } & Pick<VisualizeDifferencesResult, "addition" | "deletion" | "modification">>} */ (
-          new Promise((resolve) => {
-            const url = new URL("./worker.js", import.meta.url);
-            const worker = new Worker(url, { type: "module" });
-            worker.addEventListener("message", (e) => {
-              resolve(e.data);
-              worker.terminate();
-            });
-            worker.postMessage(
-              {
-                bufA,
-                bufB,
-                bufMask,
-                pallet: mergedOptions.pallet,
-                align: mergedOptions.align,
-              },
-              [bufA, bufB, bufMask],
-            );
-          })
-        );
-      const diff = await jimp.Jimp.fromBuffer(bufDiff);
-      return { a, b, diff, addition, deletion, modification };
-    }, navigator.hardwareConcurrency),
+
+  const maxPages = Math.max(
+    pdfA.countPages(),
+    pdfB.countPages(),
+    pdfMask.countPages(),
   );
+
+  /**
+   * @param {number} pageIndex
+   * @returns {Promise<VisualizeDifferencesResult>}
+   */
+  async function processPage(pageIndex) {
+    const [pageA, pageB, pageMask] = await Promise.all([
+      pageIndex < pdfA.countPages()
+        ? pageToImage(
+            pdfA.loadPage(pageIndex),
+            mergedOptions.dpi,
+            mergedOptions.alpha,
+          )
+        : createEmptyImage(1, 1),
+      pageIndex < pdfB.countPages()
+        ? pageToImage(
+            pdfB.loadPage(pageIndex),
+            mergedOptions.dpi,
+            mergedOptions.alpha,
+          )
+        : createEmptyImage(1, 1),
+      pageIndex < pdfMask.countPages()
+        ? pageToImage(
+            pdfMask.loadPage(pageIndex),
+            mergedOptions.dpi,
+            mergedOptions.alpha,
+          )
+        : createEmptyImage(1, 1),
+    ]);
+
+    // NOTE: getBufferはcopyなので、Workerに移譲した後もa, bを使用して問題ない
+    // https://github.com/jimp-dev/jimp/blob/b6b0e418a5f1259211a133b20cddb4f4e5c25679/packages/core/src/index.ts#L444
+    const [bufA, bufB, bufMask] = await Promise.all([
+      pageA
+        .getBuffer(jimp.JimpMime.png)
+        .then((buf) => new Uint8Array(buf).buffer),
+      pageB
+        .getBuffer(jimp.JimpMime.png)
+        .then((buf) => new Uint8Array(buf).buffer),
+      pageMask
+        .getBuffer(jimp.JimpMime.png)
+        .then((buf) => new Uint8Array(buf).buffer),
+    ]);
+
+    const { bufDiff, addition, deletion, modification } =
+      await /** @type {Promise<{ bufDiff: ArrayBuffer } & Pick<VisualizeDifferencesResult, "addition" | "deletion" | "modification">>} */ (
+        new Promise((resolve) => {
+          const url = new URL("./worker.js", import.meta.url);
+          const worker = new Worker(url, { type: "module" });
+          worker.addEventListener("message", (e) => {
+            resolve(e.data);
+            worker.terminate();
+          });
+          worker.postMessage(
+            {
+              bufA,
+              bufB,
+              bufMask,
+              pallet: mergedOptions.pallet,
+              align: mergedOptions.align,
+            },
+            [bufA, bufB, bufMask],
+          );
+        })
+      );
+    const diff = await jimp.Jimp.fromBuffer(bufDiff);
+    return { a: pageA, b: pageB, diff, addition, deletion, modification };
+  }
+
+  // ページ処理を並列発行し、順序を保証して出力
+  const concurrency = navigator.hardwareConcurrency;
+  const pending = /** @type {Promise<VisualizeDifferencesResult>[]} */ ([]);
+  let nextPageToProcess = 0;
+  let nextPageToYield = 0;
+
+  while (nextPageToYield < maxPages) {
+    // プールに空きがあれば新しいページ処理を追加
+    while (nextPageToProcess < maxPages && pending.length < concurrency) {
+      pending.push(processPage(nextPageToProcess));
+      nextPageToProcess++;
+    }
+
+    // 次に出力すべきページのPromiseを待つ
+    const result = await pending[0];
+    pending.shift();
+    yield result;
+    nextPageToYield++;
+  }
 }
