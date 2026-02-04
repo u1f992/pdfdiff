@@ -1,6 +1,6 @@
 {
   "name": "@u1f992/pdfdiff",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Visualize and quantify differences between two PDF files.",
   "main": "dist/index.js",
   "bin": {
