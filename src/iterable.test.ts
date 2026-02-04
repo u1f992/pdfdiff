@@ -1,5 +1,3 @@
-// @ts-check
-
 /*
  * Copyright (C) 2025  Koutaro Mukai
  *
@@ -20,7 +18,7 @@
 import assert from "assert";
 import test from "node:test";
 
-import { withIndex } from "./iterable.js";
+import { withIndex } from "./iterable.ts";
 
 test("withIndex", async () => {
   assert.deepStrictEqual(

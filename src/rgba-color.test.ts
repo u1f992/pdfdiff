@@ -1,5 +1,3 @@
-// @ts-check
-
 /*
  * Copyright (C) 2025  Koutaro Mukai
  *
@@ -20,7 +18,7 @@
 import assert from "assert";
 import test from "node:test";
 
-import { parseHex, formatHex } from "./rgba-color.js";
+import { parseHex, formatHex } from "./rgba-color.ts";
 
 test("parseHex", async (ctx) => {
   await ctx.test("#rgb", () => {

@@ -43,6 +43,8 @@
 
     // With Rollup
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "noEmit": true
   }
 }
