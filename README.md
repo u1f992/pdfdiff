@@ -5,7 +5,7 @@ Visualize and quantify differences between two PDF files.
 ## Usage
 
 ```
-$ npx pdfdiff --help
+$ npx @u1f992/pdfdiff --help
 USAGE:
     pdfdiff <A> <B> <OUTDIR> [OPTIONS]
 
