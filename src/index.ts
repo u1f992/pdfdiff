@@ -134,11 +134,15 @@ export async function* visualizeDifferences(
     ]);
 
     const { bufDiff, addition, deletion, modification } = (await new Promise(
-      (resolve) => {
+      (resolve, reject) => {
         const url = new URL("./worker.js", import.meta.url);
         const worker = new Worker(url, { type: "module" });
         worker.addEventListener("message", (e) => {
           resolve(e.data);
+          worker.terminate();
+        });
+        worker.addEventListener("error", (e) => {
+          reject(e);
           worker.terminate();
         });
         worker.postMessage(

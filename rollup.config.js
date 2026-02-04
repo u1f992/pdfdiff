@@ -82,6 +82,7 @@ const rollupConfig = defineConfig([
       file: "dist/cli.js",
       sourcemap: true,
     },
+    external: ["web-worker"],
     plugins: [
       typescript({ tsconfig: "./tsconfig.json" }),
       nodeResolve(),
