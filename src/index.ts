@@ -1,5 +1,3 @@
-// @ts-check
-
 /*
  * Copyright (C) 2025  Koutaro Mukai
  *
@@ -66,7 +64,7 @@ export const defaultOptions: Options = {
 export async function* visualizeDifferences(
   a: Uint8Array,
   b: Uint8Array,
-  options: Partial<Options> & Partial<{ pallet: Partial<Options["pallet"]> }>,
+  options: Partial<Omit<Options, "pallet"> & { pallet: Partial<Pallet> }>,
 ) {
   const mergedOptions = {
     dpi: options?.dpi ?? defaultOptions.dpi,

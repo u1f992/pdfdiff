@@ -1,5 +1,3 @@
-// @ts-check
-
 /*
  * Copyright (C) 2025  Koutaro Mukai
  *
@@ -18,7 +16,6 @@
  */
 
 import * as jimp from "jimp";
-/** @typedef {jimp.JimpInstance} JimpInstance */
 
 import { drawDifference, type Pallet } from "./diff.js";
 import { composeLayers, type AlignStrategy } from "./image.js";

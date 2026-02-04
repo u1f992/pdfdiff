@@ -1,22 +1,16 @@
-// @ts-check
 /// <reference lib="dom" />
 
 import * as pdfdiff from "./index.js";
 
-/**
- * @param {File} file
- */
-async function readFileAsUint8Array(file) {
-  return /** @type {Promise<Uint8Array>} */ (
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve(new Uint8Array(/** @type {ArrayBuffer} */ (reader.result)));
-      };
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(file);
-    })
-  );
+async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(new Uint8Array(reader.result as ArrayBuffer));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 document
@@ -31,11 +25,11 @@ document
     if (errorElement) errorElement.textContent = "";
 
     try {
-      const pdfAFile = /** @type {HTMLInputElement | null} */ (
-        document.getElementById("pdf-a")
+      const pdfAFile = (
+        document.getElementById("pdf-a") as HTMLInputElement | null
       )?.files?.[0];
-      const pdfBFile = /** @type {HTMLInputElement | null} */ (
-        document.getElementById("pdf-b")
+      const pdfBFile = (
+        document.getElementById("pdf-b") as HTMLInputElement | null
       )?.files?.[0];
       if (typeof pdfAFile === "undefined" || typeof pdfBFile === "undefined") {
         throw new Error();
@@ -43,24 +37,23 @@ document
       const pdfA = await readFileAsUint8Array(pdfAFile);
       const pdfB = await readFileAsUint8Array(pdfBFile);
 
-      const pdfMaskFile = /** @type {HTMLInputElement | null} */ (
-        document.getElementById("pdf-mask")
+      const pdfMaskFile = (
+        document.getElementById("pdf-mask") as HTMLInputElement | null
       )?.files?.[0];
       const pdfMask = pdfMaskFile
         ? await readFileAsUint8Array(pdfMaskFile)
         : undefined;
 
       const dpi = ((
-        val = /** @type {HTMLInputElement | null} */ (
-          document.getElementById("dpi")
-        )?.value,
+        val = (document.getElementById("dpi") as HTMLInputElement | null)
+          ?.value,
       ) => (typeof val !== "undefined" ? parseInt(val, 10) : undefined))();
-      const alpha = /** @type {HTMLInputElement | null} */ (
-        document.getElementById("alpha")
+      const alpha = (
+        document.getElementById("alpha") as HTMLInputElement | null
       )?.checked;
 
-      const align = /** @type {HTMLInputElement | null} */ (
-        document.getElementById("align")
+      const align = (
+        document.getElementById("align") as HTMLInputElement | null
       )?.value;
       if (
         typeof align !== "undefined" &&
@@ -69,21 +62,24 @@ document
         throw new Error();
       }
 
-      const additionColor = ((
-        hex = /** @type {HTMLInputElement | null} */ (
-          document.getElementById("addition-color")
-        )?.value,
-      ) => (typeof hex !== "undefined" ? pdfdiff.parseHex(hex) : undefined))();
-      const deletionColor = ((
-        hex = /** @type {HTMLInputElement | null} */ (
-          document.getElementById("deletion-color")
-        )?.value,
-      ) => (typeof hex !== "undefined" ? pdfdiff.parseHex(hex) : undefined))();
-      const modificationColor = ((
-        hex = /** @type {HTMLInputElement | null} */ (
-          document.getElementById("modification-color")
-        )?.value,
-      ) => (typeof hex !== "undefined" ? pdfdiff.parseHex(hex) : undefined))();
+      const additionColorHex = (
+        document.getElementById("addition-color") as HTMLInputElement | null
+      )?.value;
+      const deletionColorHex = (
+        document.getElementById("deletion-color") as HTMLInputElement | null
+      )?.value;
+      const modificationColorHex = (
+        document.getElementById("modification-color") as HTMLInputElement | null
+      )?.value;
+      const additionColor = additionColorHex
+        ? pdfdiff.parseHex(additionColorHex)
+        : undefined;
+      const deletionColor = deletionColorHex
+        ? pdfdiff.parseHex(deletionColorHex)
+        : undefined;
+      const modificationColor = modificationColorHex
+        ? pdfdiff.parseHex(modificationColorHex)
+        : undefined;
       if (
         additionColor === null ||
         deletionColor === null ||
@@ -92,21 +88,23 @@ document
         throw new Error();
       }
 
+      const options: Parameters<typeof pdfdiff.visualizeDifferences>[2] = {};
+      if (dpi !== undefined) options.dpi = dpi;
+      if (alpha !== undefined) options.alpha = alpha;
+      if (pdfMask !== undefined) options.mask = pdfMask;
+      if (align !== undefined) options.align = align;
+      if (additionColor || deletionColor || modificationColor) {
+        options.pallet = {};
+        if (additionColor) options.pallet.addition = additionColor;
+        if (deletionColor) options.pallet.deletion = deletionColor;
+        if (modificationColor) options.pallet.modification = modificationColor;
+      }
+
       for await (const [
         i,
         { a, b, diff, addition, deletion, modification },
       ] of pdfdiff.withIndex(
-        pdfdiff.visualizeDifferences(pdfA, pdfB, {
-          dpi,
-          alpha,
-          mask: pdfMask,
-          align,
-          pallet: {
-            addition: additionColor,
-            deletion: deletionColor,
-            modification: modificationColor,
-          },
-        }),
+        pdfdiff.visualizeDifferences(pdfA, pdfB, options),
         1,
       )) {
         const pageResult = document.createElement("details");
@@ -180,7 +178,7 @@ document
     } catch (e) {
       console.error(e);
       if (errorElement) {
-        errorElement.textContent = `Error: ${/** @type {Error} */ (e).message}`;
+        errorElement.textContent = `Error: ${(e as Error).message}`;
       }
     }
   });

@@ -10,4 +10,5 @@ export type JimpInstance = Pick<
   | "composite"
 > & {
   getBuffer: (mime: "image/png") => ReturnType<jimp.JimpInstance["getBuffer"]>;
+  getBase64: (mime: "image/png") => ReturnType<jimp.JimpInstance["getBase64"]>;
 };

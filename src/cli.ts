@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-check
 
 /*
  * Copyright (C) 2025  Koutaro Mukai
