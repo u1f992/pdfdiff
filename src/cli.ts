@@ -79,12 +79,12 @@ OPTIONS:
     -h, --help
 
 NOTES:
-    Each worker holds the input PDFs in memory and runs an independent
-    mupdf instance. Rough per-worker memory:
-        ~ (2 * input_pdf_size_MB) + 500 MB
-    Choose --workers so that workers * per_worker_MB stays within ~80%
-    of available memory. Larger values may cause OOM; that is the
-    caller's responsibility.
+    Approximate per-worker memory:
+        a_size_MB + b_size_MB [+ mask_size_MB]    (PDF buffers in wasm)
+        + 300 MB                                  (mupdf + V8 base)
+        + (dpi / 150)^2 * 50 MB                   (pixmap working set)
+    The main process adds ~500 MB - 1 GB (varies with --workers).
+    Choose --workers so the total stays under ~80% of available memory.
 `);
   process.exit(0);
 }
