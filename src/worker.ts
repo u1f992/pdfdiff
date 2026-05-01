@@ -17,9 +17,9 @@
 
 import * as jimp from "jimp";
 
-import { drawDifference, type Pallet } from "./diff.js";
-import { composeLayers, type AlignStrategy } from "./image.js";
-import type { JimpInstance } from "./jimp.js";
+import { drawDifference, type Pallet } from "./diff.ts";
+import { composeLayers, type AlignStrategy } from "./image.ts";
+import type { JimpInstance } from "./jimp.ts";
 
 self.addEventListener(
   "message",

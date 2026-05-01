@@ -16,7 +16,7 @@
  */
 
 import * as jimp from "jimp";
-import { type JimpInstance } from "./jimp.js";
+import { type JimpInstance } from "./jimp.ts";
 
 export function createEmptyImage(width: number, height: number) {
   return new jimp.Jimp({

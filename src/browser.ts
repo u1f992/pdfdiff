@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import * as pdfdiff from "./index.js";
+import * as pdfdiff from "./index.ts";
 
 async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {

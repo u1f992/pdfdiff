@@ -28,7 +28,7 @@ import {
   parseHex,
   formatHex,
   visualizeDifferences,
-} from "./index.js";
+} from "./index.ts";
 
 const {
   positionals,

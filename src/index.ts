@@ -23,12 +23,12 @@ import {
   createEmptyImage,
   isValidAlignStrategy,
   type AlignStrategy,
-} from "./image.js";
-import { withIndex } from "./iterable.js";
-import { pageToImage } from "./pdf.js";
-import { parseHex, formatHex } from "./rgba-color.js";
-import type { Pallet } from "./diff.js";
-import type { JimpInstance } from "./jimp.js";
+} from "./image.ts";
+import { withIndex } from "./iterable.ts";
+import { pageToImage } from "./pdf.ts";
+import { parseHex, formatHex } from "./rgba-color.ts";
+import type { Pallet } from "./diff.ts";
+import type { JimpInstance } from "./jimp.ts";
 
 export { withIndex, isValidAlignStrategy, parseHex, formatHex };
 
@@ -133,7 +133,10 @@ export async function* visualizeDifferences(
 
     const { bufDiff, addition, deletion, modification } = (await new Promise(
       (resolve, reject) => {
-        const url = new URL("./worker.js", import.meta.url);
+        const url = new URL(
+          import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js",
+          import.meta.url,
+        );
         const worker = new Worker(url, { type: "module" });
         worker.addEventListener("message", (e) => {
           resolve(e.data);

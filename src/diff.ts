@@ -17,9 +17,9 @@
 
 import * as jimp from "jimp";
 
-import { type JimpInstance } from "./jimp.js";
-import { alignSize, createEmptyImage, type AlignStrategy } from "./image.js";
-import { type RGBAColor } from "./rgba-color.js";
+import { type JimpInstance } from "./jimp.ts";
+import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
+import { type RGBAColor } from "./rgba-color.ts";
 
 export type Pallet = {
   addition: RGBAColor;
