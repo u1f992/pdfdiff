@@ -23,6 +23,7 @@ import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
+import { VERSION } from "./version.ts";
 import type { JimpInstance } from "./jimp.ts";
 import type {
   ErrorMessage,
@@ -149,10 +150,8 @@ class WorkerHandle {
 }
 
 function workerUrl(): URL {
-  return new URL(
-    import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js",
-    import.meta.url,
-  );
+  const file = import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js";
+  return new URL(`${file}?v=${encodeURIComponent(VERSION)}`, import.meta.url);
 }
 
 function pageResultToResult(msg: PageResultMessage): Result {
