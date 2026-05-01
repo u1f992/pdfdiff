@@ -36,11 +36,35 @@ const jimpAlias = alias({
   ],
 });
 
+const webWorkerAlias = alias({
+  entries: [
+    {
+      find: "web-worker",
+      replacement: path.resolve(
+        "node_modules/web-worker/dist/browser/index.cjs",
+      ),
+    },
+  ],
+});
+
 const rollupConfig = defineConfig([
   {
     input: "src/index.ts",
     output: {
       file: "dist/index.js",
+      sourcemap: true,
+    },
+    plugins: [
+      jimpAlias,
+      webWorkerAlias,
+      typescript({ tsconfig: "./tsconfig.json" }),
+      ...plugins,
+    ],
+  },
+  {
+    input: "src/worker.ts",
+    output: {
+      file: "dist/worker.js",
       sourcemap: true,
     },
     plugins: [
@@ -55,6 +79,7 @@ const rollupConfig = defineConfig([
       file: "dist/cli.js",
       sourcemap: true,
     },
+    external: ["web-worker"],
     plugins: [
       typescript({ tsconfig: "./tsconfig.json" }),
       nodeResolve(),
@@ -69,6 +94,7 @@ const rollupConfig = defineConfig([
     },
     plugins: [
       jimpAlias,
+      webWorkerAlias,
       typescript({ tsconfig: "./tsconfig.json" }),
       ...plugins,
     ],
