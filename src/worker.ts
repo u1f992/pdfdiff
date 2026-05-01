@@ -101,8 +101,8 @@ async function processPage(index: number): Promise<PageResultMessage> {
       : createEmptyImage(1, 1),
     index < pdfMask.countPages()
       ? pageToImage(pdfMask.loadPage(index), opts.dpi, opts.alpha)
-      : createEmptyImage(1, 1),
-  ])) as [JimpInstance, JimpInstance, JimpInstance];
+      : Promise.resolve(null),
+  ])) as [JimpInstance, JimpInstance, JimpInstance | null];
   sLoad.stop();
 
   const sDiff = perf.span("worker.drawDifference_ms");

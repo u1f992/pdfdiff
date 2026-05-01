@@ -29,19 +29,27 @@ export type Pallet = {
 export function drawDifference(
   a: JimpInstance,
   b: JimpInstance,
-  mask: JimpInstance,
+  mask: JimpInstance | null,
   pallet: Readonly<Pallet>,
   align: AlignStrategy,
 ) {
   const sAlign = perf.span("diff.align_ms");
-  const [aNew, bNew, maskNew] = alignSize([a, b, mask], align);
+  let aNew: JimpInstance;
+  let bNew: JimpInstance;
+  let maskNew: JimpInstance | null;
+  if (mask !== null) {
+    [aNew, bNew, maskNew] = alignSize([a, b, mask], align);
+  } else {
+    [aNew, bNew] = alignSize([a, b], align);
+    maskNew = null;
+  }
   sAlign.stop();
 
   const width = aNew.width;
   const height = aNew.height;
   const aData = aNew.bitmap.data;
   const bData = bNew.bitmap.data;
-  const mData = maskNew.bitmap.data;
+  const mData = maskNew !== null ? maskNew.bitmap.data : null;
 
   const sCreate = perf.span("diff.createEmpty_ms");
   const diffImage = createEmptyImage(width, height);
@@ -55,39 +63,76 @@ export function drawDifference(
   const sScan = perf.span("diff.scan_ms");
   let diffPixels = 0;
 
-  for (let x = 0; x < width; x++) {
-    for (let y = 0; y < height; y++) {
-      const idx = (y * width + x) * 4;
-      if (mData[idx + 3]! !== 0) continue;
-      const aAlpha = aData[idx + 3]!;
-      const bAlpha = bData[idx + 3]!;
-      if (
-        aAlpha === bAlpha &&
-        aData[idx] === bData[idx] &&
-        aData[idx + 1] === bData[idx + 1] &&
-        aData[idx + 2] === bData[idx + 2]
-      ) {
-        continue;
+  if (mData !== null) {
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        const idx = (y * width + x) * 4;
+        if (mData[idx + 3]! !== 0) continue;
+        const aAlpha = aData[idx + 3]!;
+        const bAlpha = bData[idx + 3]!;
+        if (
+          aAlpha === bAlpha &&
+          aData[idx] === bData[idx] &&
+          aData[idx + 1] === bData[idx + 1] &&
+          aData[idx + 2] === bData[idx + 2]
+        ) {
+          continue;
+        }
+        if (aAlpha === 0 && bAlpha === 0) continue;
+        let target: [number, number][];
+        let color: Readonly<RGBAColor>;
+        if (aAlpha === 0) {
+          target = addition;
+          color = pallet.addition;
+        } else if (bAlpha === 0) {
+          target = deletion;
+          color = pallet.deletion;
+        } else {
+          target = modification;
+          color = pallet.modification;
+        }
+        target.push([x, y]);
+        diffPixels++;
+        dData[idx] = color[0];
+        dData[idx + 1] = color[1];
+        dData[idx + 2] = color[2];
+        dData[idx + 3] = color[3];
       }
-      if (aAlpha === 0 && bAlpha === 0) continue;
-      let target: [number, number][];
-      let color: Readonly<RGBAColor>;
-      if (aAlpha === 0) {
-        target = addition;
-        color = pallet.addition;
-      } else if (bAlpha === 0) {
-        target = deletion;
-        color = pallet.deletion;
-      } else {
-        target = modification;
-        color = pallet.modification;
+    }
+  } else {
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        const idx = (y * width + x) * 4;
+        const aAlpha = aData[idx + 3]!;
+        const bAlpha = bData[idx + 3]!;
+        if (
+          aAlpha === bAlpha &&
+          aData[idx] === bData[idx] &&
+          aData[idx + 1] === bData[idx + 1] &&
+          aData[idx + 2] === bData[idx + 2]
+        ) {
+          continue;
+        }
+        if (aAlpha === 0 && bAlpha === 0) continue;
+        let target: [number, number][];
+        let color: Readonly<RGBAColor>;
+        if (aAlpha === 0) {
+          target = addition;
+          color = pallet.addition;
+        } else if (bAlpha === 0) {
+          target = deletion;
+          color = pallet.deletion;
+        } else {
+          target = modification;
+          color = pallet.modification;
+        }
+        target.push([x, y]);
+        diffPixels++;
+        dData[idx] = color[0];
+        dData[idx + 1] = color[1];
+        dData[idx + 2] = color[2];
+        dData[idx + 3] = color[3];
       }
-      target.push([x, y]);
-      diffPixels++;
-      dData[idx] = color[0];
-      dData[idx + 1] = color[1];
-      dData[idx + 2] = color[2];
-      dData[idx + 3] = color[3];
     }
   }
   sScan.stop();
