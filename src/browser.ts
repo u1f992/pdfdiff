@@ -6,6 +6,15 @@ import { VERSION } from "./version.ts";
 const versionEl = document.getElementById("version");
 if (versionEl) versionEl.textContent = "v" + VERSION;
 
+const hideNoDiffEl = document.getElementById(
+  "hide-no-diff",
+) as HTMLInputElement | null;
+const applyHideNoDiff = () => {
+  document.body.classList.toggle("hide-no-diff", !!hideNoDiffEl?.checked);
+};
+hideNoDiffEl?.addEventListener("change", applyHideNoDiff);
+applyHideNoDiff();
+
 async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -125,8 +134,10 @@ document
       )) {
         const pageResult = document.createElement("details");
         pageResult.className = "diff-details";
-        pageResult.open =
-          addition.length + deletion.length + modification.length > 0;
+        const totalDiff =
+          addition.length + deletion.length + modification.length;
+        if (totalDiff === 0) pageResult.classList.add("no-diff");
+        pageResult.open = totalDiff > 0;
 
         const summary = document.createElement("summary");
 

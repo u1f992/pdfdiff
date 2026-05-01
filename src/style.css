@@ -17,3 +17,7 @@
 .diff-table td {
   border: 1px solid black;
 }
+
+body.hide-no-diff .diff-details.no-diff {
+  display: none;
+}
