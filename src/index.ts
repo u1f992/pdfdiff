@@ -25,6 +25,7 @@ import { withIndex } from "./iterable.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
 import type { JimpInstance } from "./jimp.ts";
 import type {
+  ErrorMessage,
   InitMessage,
   PageMessage,
   PageResultMessage,
@@ -80,22 +81,28 @@ function asSharedBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
 }
 
+type WorkerResponse = ReadyMessage | PageResultMessage | ErrorMessage;
+
 class WorkerHandle {
   worker: InstanceType<typeof Worker>;
-  private pendingResolve:
-    | ((data: ReadyMessage | PageResultMessage) => void)
-    | null = null;
+  private pendingResolve: ((data: WorkerResponse) => void) | null = null;
   private pendingReject: ((reason: unknown) => void) | null = null;
 
   constructor(url: URL) {
     this.worker = new Worker(url, { type: "module" });
     this.worker.addEventListener(
       "message",
-      (e: MessageEvent<ReadyMessage | PageResultMessage>) => {
+      (e: MessageEvent<WorkerResponse>) => {
+        const data = e.data;
         const resolve = this.pendingResolve;
+        const reject = this.pendingReject;
         this.pendingResolve = null;
         this.pendingReject = null;
-        resolve?.(e.data);
+        if (data.type === "error") {
+          reject?.(new Error(`worker: ${data.message}`));
+        } else {
+          resolve?.(data);
+        }
       },
     );
     this.worker.addEventListener("error", (e: ErrorEvent) => {
@@ -108,9 +115,7 @@ class WorkerHandle {
 
   init(msg: InitMessage): Promise<ReadyMessage> {
     return new Promise<ReadyMessage>((resolve, reject) => {
-      this.pendingResolve = resolve as (
-        data: ReadyMessage | PageResultMessage,
-      ) => void;
+      this.pendingResolve = resolve as (data: WorkerResponse) => void;
       this.pendingReject = reject;
       this.worker.postMessage(msg);
     });
@@ -118,9 +123,7 @@ class WorkerHandle {
 
   processPage(index: number): Promise<PageResultMessage> {
     return new Promise<PageResultMessage>((resolve, reject) => {
-      this.pendingResolve = resolve as (
-        data: ReadyMessage | PageResultMessage,
-      ) => void;
+      this.pendingResolve = resolve as (data: WorkerResponse) => void;
       this.pendingReject = reject;
       const msg: PageMessage = { type: "page", index };
       this.worker.postMessage(msg);

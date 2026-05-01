@@ -57,6 +57,11 @@ export type PageResultMessage = {
   modification: [number, number][];
 };
 
+export type ErrorMessage = {
+  type: "error";
+  message: string;
+};
+
 let pdfA: mupdf.Document;
 let pdfB: mupdf.Document;
 let pdfMask: mupdf.Document;
@@ -131,29 +136,38 @@ async function processPage(index: number): Promise<PageResultMessage> {
 self.addEventListener(
   "message",
   async (e: MessageEvent<InitMessage | PageMessage>) => {
-    const msg = e.data;
-    if (msg.type === "init") {
-      pdfA = mupdf.PDFDocument.openDocument(msg.aBytes, "application/pdf");
-      pdfB = mupdf.PDFDocument.openDocument(msg.bBytes, "application/pdf");
-      pdfMask = msg.maskBytes
-        ? mupdf.PDFDocument.openDocument(msg.maskBytes, "application/pdf")
-        : new mupdf.PDFDocument();
-      opts = {
-        dpi: msg.dpi,
-        alpha: msg.alpha,
-        pallet: msg.pallet,
-        align: msg.align,
+    try {
+      const msg = e.data;
+      if (msg.type === "init") {
+        pdfA = mupdf.PDFDocument.openDocument(msg.aBytes, "application/pdf");
+        pdfB = mupdf.PDFDocument.openDocument(msg.bBytes, "application/pdf");
+        pdfMask = msg.maskBytes
+          ? mupdf.PDFDocument.openDocument(msg.maskBytes, "application/pdf")
+          : new mupdf.PDFDocument();
+        opts = {
+          dpi: msg.dpi,
+          alpha: msg.alpha,
+          pallet: msg.pallet,
+          align: msg.align,
+        };
+        if (pdfA.countPages() > 0) pdfA.loadPage(0).destroy();
+        const ready: ReadyMessage = { type: "ready" };
+        self.postMessage(ready);
+      } else if (msg.type === "page") {
+        const result = await processPage(msg.index);
+        self.postMessage(result, [
+          result.a.data,
+          result.b.data,
+          result.diff.data,
+        ]);
+      }
+    } catch (err) {
+      const errorMsg: ErrorMessage = {
+        type: "error",
+        message:
+          err instanceof Error ? `${err.message}\n${err.stack}` : String(err),
       };
-      if (pdfA.countPages() > 0) pdfA.loadPage(0).destroy();
-      const ready: ReadyMessage = { type: "ready" };
-      self.postMessage(ready);
-    } else if (msg.type === "page") {
-      const result = await processPage(msg.index);
-      self.postMessage(result, [
-        result.a.data,
-        result.b.data,
-        result.diff.data,
-      ]);
+      self.postMessage(errorMsg);
     }
   },
 );
