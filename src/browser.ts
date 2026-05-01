@@ -1,9 +1,24 @@
 /// <reference lib="dom" />
 
+import encode from "@jsquash/png/encode";
 import { zipSync } from "fflate";
 
 import * as pdfdiff from "./index.ts";
 import { VERSION } from "./version.ts";
+
+async function encodeBitmapToPng(img: {
+  width: number;
+  height: number;
+  bitmap: { data: Uint8Array | Uint8ClampedArray };
+}): Promise<Uint8Array> {
+  const data = img.bitmap.data;
+  const view =
+    data instanceof Uint8ClampedArray
+      ? data
+      : new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
+  const png = await encode(new ImageData(view, img.width, img.height));
+  return new Uint8Array(png);
+}
 
 const versionEl = document.getElementById("version");
 if (versionEl) versionEl.textContent = "v" + VERSION;
@@ -234,9 +249,9 @@ document
 
         const imagesRow = document.createElement("tr");
 
-        const aPng = new Uint8Array(await a.getBuffer("image/png"));
-        const bPng = new Uint8Array(await b.getBuffer("image/png"));
-        const diffPng = new Uint8Array(await diff.getBuffer("image/png"));
+        const aPng = await encodeBitmapToPng(a);
+        const bPng = await encodeBitmapToPng(b);
+        const diffPng = await encodeBitmapToPng(diff);
         resultPages.set(i, {
           a: aPng,
           b: bPng,

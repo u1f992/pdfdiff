@@ -42,6 +42,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@jsquash/png": "^3.1.1",
     "ix": "^7.0.0",
     "jimp": "^1.6.0",
     "mupdf": "^1.26.2",

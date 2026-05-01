@@ -97,10 +97,17 @@ const rollupConfig = defineConfig([
       sourcemap: true,
     },
     plugins: [
-      jimpAlias,
       typescript({ tsconfig: "./tsconfig.json" }),
       nodeResolve(),
       commonjs(),
+      copy({
+        targets: [
+          {
+            src: "node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm",
+            dest: "dist",
+          },
+        ],
+      }),
     ],
   },
   {
