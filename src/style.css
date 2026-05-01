@@ -11,11 +11,19 @@
 .diff-table {
   border: 1px solid black;
   border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .diff-table th,
 .diff-table td {
   border: 1px solid black;
+}
+
+.diff-table img {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 body.hide-no-diff .diff-details.no-diff {
