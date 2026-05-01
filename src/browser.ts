@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 
+import { zipSync } from "fflate";
+
 import * as pdfdiff from "./index.ts";
 import { VERSION } from "./version.ts";
 
@@ -14,6 +16,24 @@ const applyHideNoDiff = () => {
 };
 hideNoDiffEl?.addEventListener("change", applyHideNoDiff);
 applyHideNoDiff();
+
+const downloadButton = document.getElementById(
+  "download-zip",
+) as HTMLButtonElement | null;
+let lastZipFiles: Record<string, Uint8Array> | null = null;
+downloadButton?.addEventListener("click", () => {
+  if (!lastZipFiles) return;
+  const zipped = zipSync(lastZipFiles, { level: 0 });
+  const blob = new Blob([new Uint8Array(zipped)], { type: "application/zip" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pdfdiff-result.zip";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
 
 async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
@@ -45,6 +65,10 @@ document
       submitButton.disabled = true;
       submitButton.textContent = "Preparing...";
     }
+    if (downloadButton) downloadButton.disabled = true;
+    lastZipFiles = null;
+    const zipFiles: Record<string, Uint8Array> = {};
+    let completed = false;
 
     try {
       const pdfAFile = (
@@ -186,23 +210,36 @@ document
 
         const imagesRow = document.createElement("tr");
 
+        const aPng = new Uint8Array(await a.getBuffer("image/png"));
+        const bPng = new Uint8Array(await b.getBuffer("image/png"));
+        const diffPng = new Uint8Array(await diff.getBuffer("image/png"));
+        zipFiles[`${i}/a.png`] = aPng;
+        zipFiles[`${i}/b.png`] = bPng;
+        zipFiles[`${i}/diff.png`] = diffPng;
+
         const cellA = document.createElement("td");
         const imageA = document.createElement("img");
-        imageA.src = await a.getBase64("image/png");
+        imageA.src = URL.createObjectURL(
+          new Blob([new Uint8Array(aPng)], { type: "image/png" }),
+        );
         imageA.className = "checkerboard-bg";
         cellA.appendChild(imageA);
         imagesRow.appendChild(cellA);
 
         const cellB = document.createElement("td");
         const imageB = document.createElement("img");
-        imageB.src = await b.getBase64("image/png");
+        imageB.src = URL.createObjectURL(
+          new Blob([new Uint8Array(bPng)], { type: "image/png" }),
+        );
         imageB.className = "checkerboard-bg";
         cellB.appendChild(imageB);
         imagesRow.appendChild(cellB);
 
         const cellDiff = document.createElement("td");
         const imageDiff = document.createElement("img");
-        imageDiff.src = await diff.getBase64("image/png");
+        imageDiff.src = URL.createObjectURL(
+          new Blob([new Uint8Array(diffPng)], { type: "image/png" }),
+        );
         imageDiff.className = "checkerboard-bg";
         cellDiff.appendChild(imageDiff);
         imagesRow.appendChild(cellDiff);
@@ -212,6 +249,7 @@ document
         pageResult.appendChild(imagesTable);
         resultsContainer?.appendChild(pageResult);
       }
+      completed = true;
     } catch (e) {
       console.error(e);
       if (errorElement) {
@@ -221,6 +259,10 @@ document
       if (submitButton) {
         submitButton.disabled = false;
         submitButton.textContent = originalSubmitText;
+      }
+      if (completed && Object.keys(zipFiles).length > 0) {
+        lastZipFiles = zipFiles;
+        if (downloadButton) downloadButton.disabled = false;
       }
     }
   });
