@@ -91,6 +91,19 @@ const rollupConfig = defineConfig([
     ],
   },
   {
+    input: "src/cli-png-worker.ts",
+    output: {
+      file: "dist/cli-png-worker.js",
+      sourcemap: true,
+    },
+    plugins: [
+      jimpAlias,
+      typescript({ tsconfig: "./tsconfig.json" }),
+      nodeResolve(),
+      commonjs(),
+    ],
+  },
+  {
     input: "src/browser.ts",
     output: {
       file: "dist/browser.js",

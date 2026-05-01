@@ -20,7 +20,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
+import { Worker as ThreadWorker } from "node:worker_threads";
 
+import type { EncodeJob, EncodeReply } from "./cli-png-worker.ts";
 import {
   isValidAlignStrategy,
   defaultOptions,
@@ -31,6 +33,70 @@ import {
   perf,
 } from "./index.ts";
 import { VERSION } from "./version.ts";
+
+class PngWriterPool {
+  private readonly workers: ThreadWorker[] = [];
+  private readonly idle: ThreadWorker[] = [];
+  private readonly waiting: Array<(w: ThreadWorker) => void> = [];
+
+  constructor(size: number, scriptUrl: URL) {
+    for (let i = 0; i < size; i++) {
+      const w = new ThreadWorker(scriptUrl);
+      this.workers.push(w);
+      this.idle.push(w);
+    }
+  }
+
+  private acquire(): Promise<ThreadWorker> {
+    const w = this.idle.pop();
+    if (w) return Promise.resolve(w);
+    return new Promise<ThreadWorker>((resolve) => this.waiting.push(resolve));
+  }
+
+  private release(w: ThreadWorker) {
+    const next = this.waiting.shift();
+    if (next) next(w);
+    else this.idle.push(w);
+  }
+
+  async submit(job: EncodeJob): Promise<void> {
+    const w = await this.acquire();
+    return new Promise<void>((resolve, reject) => {
+      const onMessage = (msg: EncodeReply) => {
+        w.off("message", onMessage);
+        w.off("error", onError);
+        this.release(w);
+        if (msg.ok) resolve();
+        else reject(new Error(msg.error));
+      };
+      const onError = (err: Error) => {
+        w.off("message", onMessage);
+        w.off("error", onError);
+        this.release(w);
+        reject(err);
+      };
+      w.on("message", onMessage);
+      w.once("error", onError);
+      w.postMessage(job, [job.data]);
+    });
+  }
+
+  async terminate(): Promise<void> {
+    await Promise.all(this.workers.map((w) => w.terminate()));
+  }
+}
+
+function bitmapToTransferable(
+  src: Buffer | Uint8Array | Uint8ClampedArray | number[],
+): ArrayBuffer {
+  const view =
+    src instanceof Uint8Array || src instanceof Uint8ClampedArray
+      ? src
+      : Uint8Array.from(src as ArrayLike<number>);
+  const out = new ArrayBuffer(view.byteLength);
+  new Uint8Array(out).set(view);
+  return out;
+}
 
 const _wallSpan = perf.span("cli.wallTotal_ms");
 
@@ -152,6 +218,12 @@ if (Number.isNaN(workers) || workers < 1) {
 }
 
 fs.mkdirSync(outDir, { recursive: true });
+const writerPool = new PngWriterPool(
+  workers,
+  new URL("./cli-png-worker.js", import.meta.url),
+);
+const pendingWrites: Promise<void>[] = [];
+
 const _loopSpan = perf.span("cli.loopWall_ms");
 for await (const [
   i,
@@ -176,17 +248,36 @@ for await (const [
   );
   const dir = path.join(outDir, i.toString(10));
   fs.mkdirSync(dir, { recursive: true });
-  const sEnc = perf.span("cli.getBuffer_ms");
-  const aPng = new Uint8Array(await a.getBuffer("image/png"));
-  const bPng = new Uint8Array(await b.getBuffer("image/png"));
-  const dPng = new Uint8Array(await diff.getBuffer("image/png"));
-  sEnc.stop();
-  const sWrite = perf.span("cli.writeFile_ms");
-  fs.writeFileSync(path.join(dir, "a.png"), aPng);
-  fs.writeFileSync(path.join(dir, "b.png"), bPng);
-  fs.writeFileSync(path.join(dir, "diff.png"), dPng);
-  sWrite.stop();
+  const sSubmit = perf.span("cli.poolSubmit_ms");
+  const aBuf = bitmapToTransferable(a.bitmap.data);
+  const bBuf = bitmapToTransferable(b.bitmap.data);
+  const dBuf = bitmapToTransferable(diff.bitmap.data);
+  pendingWrites.push(
+    writerPool.submit({
+      width: a.width,
+      height: a.height,
+      data: aBuf,
+      path: path.join(dir, "a.png"),
+    }),
+    writerPool.submit({
+      width: b.width,
+      height: b.height,
+      data: bBuf,
+      path: path.join(dir, "b.png"),
+    }),
+    writerPool.submit({
+      width: diff.width,
+      height: diff.height,
+      data: dBuf,
+      path: path.join(dir, "diff.png"),
+    }),
+  );
+  sSubmit.stop();
 }
+const sDrain = perf.span("cli.poolDrain_ms");
+await Promise.all(pendingWrites);
+sDrain.stop();
+await writerPool.terminate();
 _loopSpan.stop();
 _wallSpan.stop();
 
