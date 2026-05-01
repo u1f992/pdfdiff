@@ -4,6 +4,7 @@ export type JimpInstance = Pick<
   jimp.JimpInstance,
   | "width"
   | "height"
+  | "bitmap"
   | "getPixelColor"
   | "setPixelColor"
   | "resize"
