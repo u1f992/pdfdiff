@@ -27,7 +27,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+        with:
+          # scripts/version.ts uses `git describe --tags --exact-match`
+          # to detect tagged releases; without this it always falls
+          # back to <version>+<hash>.
+          fetch-tags: true
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
