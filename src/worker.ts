@@ -42,6 +42,10 @@ export type PageMessage = {
   index: number;
 };
 
+export type LoadedMessage = {
+  type: "loaded";
+};
+
 export type ReadyMessage = {
   type: "ready";
 };
@@ -171,3 +175,6 @@ self.addEventListener(
     }
   },
 );
+
+const loaded: LoadedMessage = { type: "loaded" };
+self.postMessage(loaded);

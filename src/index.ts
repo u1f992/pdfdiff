@@ -27,6 +27,7 @@ import type { JimpInstance } from "./jimp.ts";
 import type {
   ErrorMessage,
   InitMessage,
+  LoadedMessage,
   PageMessage,
   PageResultMessage,
   ReadyMessage,
@@ -81,19 +82,27 @@ function asSharedBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-type WorkerResponse = ReadyMessage | PageResultMessage | ErrorMessage;
+type WorkerResponse =
+  | LoadedMessage
+  | ReadyMessage
+  | PageResultMessage
+  | ErrorMessage;
 
 class WorkerHandle {
   worker: InstanceType<typeof Worker>;
+  private loaded: Promise<void>;
   private pendingResolve: ((data: WorkerResponse) => void) | null = null;
   private pendingReject: ((reason: unknown) => void) | null = null;
 
   constructor(url: URL) {
     this.worker = new Worker(url, { type: "module" });
-    this.worker.addEventListener(
-      "message",
-      (e: MessageEvent<WorkerResponse>) => {
+    this.loaded = new Promise<void>((resolveLoaded, rejectLoaded) => {
+      const onMessage = (e: MessageEvent<WorkerResponse>) => {
         const data = e.data;
+        if (data.type === "loaded") {
+          resolveLoaded();
+          return;
+        }
         const resolve = this.pendingResolve;
         const reject = this.pendingReject;
         this.pendingResolve = null;
@@ -103,17 +112,21 @@ class WorkerHandle {
         } else {
           resolve?.(data);
         }
-      },
-    );
-    this.worker.addEventListener("error", (e: ErrorEvent) => {
-      const reject = this.pendingReject;
-      this.pendingResolve = null;
-      this.pendingReject = null;
-      reject?.(e.error ?? new Error(e.message));
+      };
+      this.worker.addEventListener("message", onMessage);
+      this.worker.addEventListener("error", (e: ErrorEvent) => {
+        const err = e.error ?? new Error(e.message);
+        rejectLoaded(err);
+        const reject = this.pendingReject;
+        this.pendingResolve = null;
+        this.pendingReject = null;
+        reject?.(err);
+      });
     });
   }
 
-  init(msg: InitMessage): Promise<ReadyMessage> {
+  async init(msg: InitMessage): Promise<ReadyMessage> {
+    await this.loaded;
     return new Promise<ReadyMessage>((resolve, reject) => {
       this.pendingResolve = resolve as (data: WorkerResponse) => void;
       this.pendingReject = reject;
