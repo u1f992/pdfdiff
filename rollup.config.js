@@ -27,6 +27,15 @@ const plugins = [
   }),
 ];
 
+const jimpAlias = alias({
+  entries: [
+    {
+      find: "jimp",
+      replacement: path.resolve("node_modules/jimp/dist/browser/index.js"),
+    },
+  ],
+});
+
 const rollupConfig = defineConfig([
   {
     input: "src/index.ts",
@@ -35,43 +44,7 @@ const rollupConfig = defineConfig([
       sourcemap: true,
     },
     plugins: [
-      alias({
-        entries: [
-          {
-            find: "jimp",
-            replacement: path.resolve(
-              "node_modules/jimp/dist/browser/index.js",
-            ),
-          },
-          {
-            find: "web-worker",
-            replacement: path.resolve(
-              "node_modules/web-worker/dist/browser/index.cjs",
-            ),
-          },
-        ],
-      }),
-      typescript({ tsconfig: "./tsconfig.json" }),
-      ...plugins,
-    ],
-  },
-  {
-    input: "src/worker.ts",
-    output: {
-      file: "dist/worker.js",
-      sourcemap: true,
-    },
-    plugins: [
-      alias({
-        entries: [
-          {
-            find: "jimp",
-            replacement: path.resolve(
-              "node_modules/jimp/dist/browser/index.js",
-            ),
-          },
-        ],
-      }),
+      jimpAlias,
       typescript({ tsconfig: "./tsconfig.json" }),
       ...plugins,
     ],
@@ -82,7 +55,6 @@ const rollupConfig = defineConfig([
       file: "dist/cli.js",
       sourcemap: true,
     },
-    external: ["web-worker"],
     plugins: [
       typescript({ tsconfig: "./tsconfig.json" }),
       nodeResolve(),
@@ -96,22 +68,7 @@ const rollupConfig = defineConfig([
       sourcemap: true,
     },
     plugins: [
-      alias({
-        entries: [
-          {
-            find: "jimp",
-            replacement: path.resolve(
-              "node_modules/jimp/dist/browser/index.js",
-            ),
-          },
-          {
-            find: "web-worker",
-            replacement: path.resolve(
-              "node_modules/web-worker/dist/browser/index.cjs",
-            ),
-          },
-        ],
-      }),
+      jimpAlias,
       typescript({ tsconfig: "./tsconfig.json" }),
       ...plugins,
     ],

@@ -15,11 +15,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import * as jimp from "jimp";
 import * as mupdf from "mupdf";
-import Worker from "web-worker";
 
+import { drawDifference, type Pallet } from "./diff.ts";
 import {
+  composeLayers,
   createEmptyImage,
   isValidAlignStrategy,
   type AlignStrategy,
@@ -27,7 +27,6 @@ import {
 import { withIndex } from "./iterable.ts";
 import { pageToImage } from "./pdf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
-import type { Pallet } from "./diff.ts";
 import type { JimpInstance } from "./jimp.ts";
 
 export { withIndex, isValidAlignStrategy, parseHex, formatHex };
@@ -117,73 +116,33 @@ export async function* visualizeDifferences(
         : createEmptyImage(1, 1),
     ]);
 
-    // NOTE: getBufferはcopyなので、Workerに移譲した後もa, bを使用して問題ない
-    // https://github.com/jimp-dev/jimp/blob/b6b0e418a5f1259211a133b20cddb4f4e5c25679/packages/core/src/index.ts#L444
-    const [bufA, bufB, bufMask] = await Promise.all([
-      pageA
-        .getBuffer(jimp.JimpMime.png)
-        .then((buf) => new Uint8Array(buf).buffer),
-      pageB
-        .getBuffer(jimp.JimpMime.png)
-        .then((buf) => new Uint8Array(buf).buffer),
-      pageMask
-        .getBuffer(jimp.JimpMime.png)
-        .then((buf) => new Uint8Array(buf).buffer),
+    const {
+      diff: diffLayer,
+      addition,
+      deletion,
+      modification,
+    } = drawDifference(
+      pageA,
+      pageB,
+      pageMask,
+      mergedOptions.pallet,
+      mergedOptions.align,
+    );
+    const diff = composeLayers(pageA.width, pageA.height, [
+      [pageA, 0.2],
+      [pageB, 0.2],
+      [diffLayer, 1],
     ]);
-
-    const { bufDiff, addition, deletion, modification } = (await new Promise(
-      (resolve, reject) => {
-        const url = new URL(
-          import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js",
-          import.meta.url,
-        );
-        const worker = new Worker(url, { type: "module" });
-        worker.addEventListener("message", (e) => {
-          resolve(e.data);
-          worker.terminate();
-        });
-        worker.addEventListener("error", (e) => {
-          reject(e);
-          worker.terminate();
-        });
-        worker.postMessage(
-          {
-            bufA,
-            bufB,
-            bufMask,
-            pallet: mergedOptions.pallet,
-            align: mergedOptions.align,
-          },
-          [bufA, bufB, bufMask],
-        );
-      },
-    )) as {
-      bufDiff: ArrayBuffer;
-      addition: [number, number][];
-      deletion: [number, number][];
-      modification: [number, number][];
-    };
-    const diff = await jimp.Jimp.fromBuffer(bufDiff);
     return { a: pageA, b: pageB, diff, addition, deletion, modification };
   }
 
-  // ページ処理を並列発行し、順序を保証して出力
-  const concurrency = navigator.hardwareConcurrency;
-  const pending = /** @type {Promise<VisualizeDifferencesResult>[]} */ [];
-  let nextPageToProcess = 0;
-  let nextPageToYield = 0;
-
-  while (nextPageToYield < maxPages) {
-    // プールに空きがあれば新しいページ処理を追加
-    while (nextPageToProcess < maxPages && pending.length < concurrency) {
-      pending.push(processPage(nextPageToProcess));
-      nextPageToProcess++;
+  try {
+    for (let i = 0; i < maxPages; i++) {
+      yield (await processPage(i)) as Result;
     }
-
-    // 次に出力すべきページのPromiseを待つ
-    const result = await pending[0];
-    pending.shift();
-    yield result as Result;
-    nextPageToYield++;
+  } finally {
+    pdfA.destroy();
+    pdfB.destroy();
+    pdfMask.destroy();
   }
 }
