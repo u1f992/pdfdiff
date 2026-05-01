@@ -29,6 +29,7 @@ import {
   formatHex,
   visualizeDifferences,
 } from "./index.ts";
+import { VERSION } from "./version.ts";
 
 const {
   positionals,
@@ -89,16 +90,7 @@ NOTES:
   process.exit(0);
 }
 if (version) {
-  try {
-    const versionStr = JSON.parse(
-      fs.readFileSync(new URL("../package.json", import.meta.url), {
-        encoding: "utf-8",
-      }),
-    ).version;
-    console.log(versionStr);
-  } catch {
-    console.log("unknown");
-  }
+  console.log(VERSION);
   process.exit(0);
 }
 

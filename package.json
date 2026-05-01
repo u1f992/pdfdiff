@@ -9,7 +9,8 @@
   "scripts": {
     "test": "node --test",
     "test:cli": "node src/cli.js test/a.pdf test/b.pdf out --mask test/mask.pdf --dpi 300 && echo \"expected: Page 1, Addition: 7500, Deletion: 7500, Modification: 7500\"",
-    "build": "rollup -c",
+    "build:version": "node scripts/version.ts",
+    "build": "npm run build:version && rollup -c",
     "serve": "npm run build && http-server dist"
   },
   "repository": {

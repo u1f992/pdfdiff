@@ -1,6 +1,10 @@
 /// <reference lib="dom" />
 
 import * as pdfdiff from "./index.ts";
+import { VERSION } from "./version.ts";
+
+const versionEl = document.getElementById("version");
+if (versionEl) versionEl.textContent = "v" + VERSION;
 
 async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
