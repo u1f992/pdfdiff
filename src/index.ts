@@ -39,8 +39,7 @@ type Options = {
   mask: Uint8Array | undefined;
   align: AlignStrategy;
   pallet: Pallet;
-  maxMemoryMB: number | undefined;
-  disableMemoryWarning: boolean;
+  workers: number;
 };
 
 type Result = {
@@ -62,38 +61,8 @@ export const defaultOptions: Options = {
     deletion: [0xff, 0x57, 0x24, 0xff],
     modification: [0xff, 0xc1, 0x05, 0xff],
   },
-  maxMemoryMB: undefined,
-  disableMemoryWarning: false,
+  workers: 1,
 };
-
-async function detectDefaultMaxMemoryMB(): Promise<number> {
-  if (typeof globalThis.process !== "undefined") {
-    try {
-      const specifier = "node:os";
-      const os = (await import(specifier)) as { totalmem: () => number };
-      return Math.floor(os.totalmem() / (1024 * 1024) / 2);
-    } catch {
-      // not in Node, fall through
-    }
-  }
-  if (typeof navigator !== "undefined") {
-    const dm = (navigator as { deviceMemory?: number }).deviceMemory;
-    if (typeof dm === "number") return Math.floor(dm * 1024 * 0.5);
-  }
-  return 4096;
-}
-
-function rssMB(): number | null {
-  const proc = (
-    globalThis as {
-      process?: { memoryUsage?: () => { rss: number } };
-    }
-  ).process;
-  if (proc?.memoryUsage) {
-    return Math.round(proc.memoryUsage().rss / (1024 * 1024));
-  }
-  return null;
-}
 
 function asSharedBytes(bytes: Uint8Array): Uint8Array {
   if (typeof SharedArrayBuffer !== "undefined") {
@@ -203,9 +172,7 @@ export async function* visualizeDifferences(
       modification:
         options?.pallet?.modification ?? defaultOptions.pallet.modification,
     },
-    maxMemoryMB: options?.maxMemoryMB,
-    disableMemoryWarning:
-      options?.disableMemoryWarning ?? defaultOptions.disableMemoryWarning,
+    workers: options?.workers ?? defaultOptions.workers,
   };
 
   const probe = mupdf.PDFDocument.openDocument(a, "application/pdf");
@@ -241,27 +208,13 @@ export async function* visualizeDifferences(
     align: merged.align,
   };
 
+  const N = Math.max(1, Math.min(merged.workers, maxPages));
   const url = workerUrl();
-  const baselineMB = rssMB();
   const worker0 = new WorkerHandle(url);
-  const ready0 = await worker0.init(initMsg);
-  const afterMB = rssMB();
+  await worker0.init(initMsg);
 
-  const maxMemoryMB = merged.maxMemoryMB ?? (await detectDefaultMaxMemoryMB());
-  const hwConcurrency = Math.max(1, navigator.hardwareConcurrency ?? 1);
-  const perWorkerMB =
-    baselineMB !== null && afterMB !== null
-      ? Math.max(1, afterMB - baselineMB)
-      : Math.max(1, ready0.memoryMB);
-  const memoryCap = Math.max(1, Math.floor(maxMemoryMB / perWorkerMB));
-  const N = Math.min(hwConcurrency, memoryCap, maxPages);
-
-  if (!merged.disableMemoryWarning && memoryCap < hwConcurrency) {
-    const note = N === 1 ? " (single-threaded)" : "";
-    console.warn(
-      `[pdfdiff] limited to ${N} worker(s) by max-memory-mb=${maxMemoryMB} (per-worker ~${perWorkerMB} MB, hwConcurrency=${hwConcurrency})${note}`,
-    );
-  }
+  const buffered = new Map<number, Result>();
+  let nextToAssign = 0;
 
   const workers: WorkerHandle[] = [worker0];
   for (let i = 1; i < N; i++) {
@@ -270,8 +223,6 @@ export async function* visualizeDifferences(
     workers.push(w);
   }
 
-  let nextToAssign = 0;
-  const buffered = new Map<number, Result>();
   const resolvers = new Map<number, (r: Result) => void>();
   let workerError: unknown = null;
 

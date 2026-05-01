@@ -44,7 +44,6 @@ export type PageMessage = {
 
 export type ReadyMessage = {
   type: "ready";
-  memoryMB: number;
 };
 
 export type PageResultMessage = {
@@ -67,16 +66,6 @@ let opts: {
   pallet: Pallet;
   align: AlignStrategy;
 };
-
-function measureMemoryMB(): number {
-  if (
-    typeof process !== "undefined" &&
-    typeof process.memoryUsage === "function"
-  ) {
-    return Math.round(process.memoryUsage().rss / (1024 * 1024));
-  }
-  return 0;
-}
 
 function toTransferable(
   src: Buffer | Uint8Array | Uint8ClampedArray | number[],
@@ -156,10 +145,7 @@ self.addEventListener(
         align: msg.align,
       };
       if (pdfA.countPages() > 0) pdfA.loadPage(0).destroy();
-      const ready: ReadyMessage = {
-        type: "ready",
-        memoryMB: measureMemoryMB(),
-      };
+      const ready: ReadyMessage = { type: "ready" };
       self.postMessage(ready);
     } else if (msg.type === "page") {
       const result = await processPage(msg.index);

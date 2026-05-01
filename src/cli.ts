@@ -40,8 +40,7 @@ const {
     "addition-color": additionColorHex,
     "deletion-color": deletionColorHex,
     "modification-color": modificationColorHex,
-    "max-memory-mb": maxMemoryMB_,
-    "disable-memory-warning": disableMemoryWarning_,
+    workers: workers_,
     version,
     help,
   },
@@ -55,8 +54,7 @@ const {
     "addition-color": { type: "string" },
     "deletion-color": { type: "string" },
     "modification-color": { type: "string" },
-    "max-memory-mb": { type: "string" },
-    "disable-memory-warning": { type: "boolean" },
+    workers: { type: "string" },
     version: { type: "boolean", short: "v" },
     help: { type: "boolean", short: "h" },
   },
@@ -76,10 +74,17 @@ OPTIONS:
     --addition-color <#HEX>        default: ${formatHex(defaultOptions.pallet.addition)}
     --deletion-color <#HEX>        default: ${formatHex(defaultOptions.pallet.deletion)}
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
-    --max-memory-mb <MB>           default: half of system memory
-    --disable-memory-warning       suppress per-worker memory limit warning
+    --workers <N>                  default: ${defaultOptions.workers}
     -v, --version
     -h, --help
+
+NOTES:
+    Each worker holds the input PDFs in memory and runs an independent
+    mupdf instance. Rough per-worker memory:
+        ~ (2 * input_pdf_size_MB) + 500 MB
+    Choose --workers so that workers * per_worker_MB stays within ~80%
+    of available memory. Larger values may cause OOM; that is the
+    caller's responsibility.
 `);
   process.exit(0);
 }
@@ -143,12 +148,13 @@ if (
   throw new Error("Invalid color format");
 }
 
-const maxMemoryMB =
-  typeof maxMemoryMB_ !== "undefined" ? parseInt(maxMemoryMB_, 10) : undefined;
-if (typeof maxMemoryMB === "number" && Number.isNaN(maxMemoryMB)) {
-  throw new Error("Invalid max-memory-mb value");
+const workers =
+  typeof workers_ !== "undefined"
+    ? parseInt(workers_, 10)
+    : defaultOptions.workers;
+if (Number.isNaN(workers) || workers < 1) {
+  throw new Error("Invalid workers value");
 }
-const disableMemoryWarning = disableMemoryWarning_ ?? false;
 
 fs.mkdirSync(outDir, { recursive: true });
 for await (const [
@@ -165,8 +171,7 @@ for await (const [
       deletion: deletionColor,
       modification: modificationColor,
     },
-    maxMemoryMB,
-    disableMemoryWarning,
+    workers,
   }),
   1,
 )) {

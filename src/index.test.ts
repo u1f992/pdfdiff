@@ -50,8 +50,7 @@ test("defaultOptions", () => {
       deletion: [0xff, 0x57, 0x24, 0xff],
       modification: [0xff, 0xc1, 0x05, 0xff],
     },
-    maxMemoryMB: undefined,
-    disableMemoryWarning: false,
+    workers: 1,
   });
 });
 
