@@ -62,6 +62,17 @@ document
         throw new Error();
       }
 
+      const workers = ((
+        val = (document.getElementById("workers") as HTMLInputElement | null)
+          ?.value,
+      ) => (typeof val !== "undefined" ? parseInt(val, 10) : undefined))();
+      if (
+        typeof workers !== "undefined" &&
+        (Number.isNaN(workers) || workers < 1)
+      ) {
+        throw new Error();
+      }
+
       const additionColorHex = (
         document.getElementById("addition-color") as HTMLInputElement | null
       )?.value;
@@ -93,6 +104,7 @@ document
       if (alpha !== undefined) options.alpha = alpha;
       if (pdfMask !== undefined) options.mask = pdfMask;
       if (align !== undefined) options.align = align;
+      if (workers !== undefined) options.workers = workers;
       if (additionColor || deletionColor || modificationColor) {
         options.pallet = {};
         if (additionColor) options.pallet.addition = additionColor;

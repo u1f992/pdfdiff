@@ -65,7 +65,13 @@ export const defaultOptions: Options = {
 };
 
 function asSharedBytes(bytes: Uint8Array): Uint8Array {
-  if (typeof SharedArrayBuffer !== "undefined") {
+  const isNode =
+    typeof globalThis.process !== "undefined" &&
+    !!globalThis.process.versions?.node;
+  const coiOk =
+    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated ===
+    true;
+  if (typeof SharedArrayBuffer !== "undefined" && (isNode || coiOk)) {
     const sab = new SharedArrayBuffer(bytes.byteLength);
     const view = new Uint8Array(sab);
     view.set(bytes);
