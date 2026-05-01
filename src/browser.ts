@@ -37,6 +37,15 @@ document
     const errorElement = document.getElementById("error-message");
     if (errorElement) errorElement.textContent = "";
 
+    const submitButton = (event.currentTarget as HTMLFormElement).querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement | null;
+    const originalSubmitText = submitButton?.textContent ?? "";
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Preparing...";
+    }
+
     try {
       const pdfAFile = (
         document.getElementById("pdf-a") as HTMLInputElement | null
@@ -132,6 +141,7 @@ document
         pdfdiff.visualizeDifferences(pdfA, pdfB, options),
         1,
       )) {
+        if (submitButton) submitButton.textContent = `Page ${i}...`;
         const pageResult = document.createElement("details");
         pageResult.className = "diff-details";
         const totalDiff =
@@ -206,6 +216,11 @@ document
       console.error(e);
       if (errorElement) {
         errorElement.textContent = `Error: ${(e as Error).message}`;
+      }
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalSubmitText;
       }
     }
   });
