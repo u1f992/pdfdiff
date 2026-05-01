@@ -20,15 +20,39 @@ applyHideNoDiff();
 const downloadButton = document.getElementById(
   "download-zip",
 ) as HTMLButtonElement | null;
-let lastZipFiles: Record<string, Uint8Array> | null = null;
+type ResultPage = {
+  a: Uint8Array;
+  b: Uint8Array;
+  diff: Uint8Array;
+  hasDiff: boolean;
+};
+let lastResultPages: Map<number, ResultPage> | null = null;
+const updateDownloadLabel = () => {
+  if (!downloadButton) return;
+  downloadButton.textContent = hideNoDiffEl?.checked
+    ? "Download zip (diff only)"
+    : "Download zip";
+};
+hideNoDiffEl?.addEventListener("change", updateDownloadLabel);
+updateDownloadLabel();
+
 downloadButton?.addEventListener("click", () => {
-  if (!lastZipFiles) return;
-  const zipped = zipSync(lastZipFiles, { level: 0 });
+  if (!lastResultPages) return;
+  const diffOnly = !!hideNoDiffEl?.checked;
+  const files: Record<string, Uint8Array> = {};
+  for (const [i, page] of lastResultPages) {
+    if (diffOnly && !page.hasDiff) continue;
+    files[`${i}/a.png`] = page.a;
+    files[`${i}/b.png`] = page.b;
+    files[`${i}/diff.png`] = page.diff;
+  }
+  if (Object.keys(files).length === 0) return;
+  const zipped = zipSync(files, { level: 0 });
   const blob = new Blob([new Uint8Array(zipped)], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "pdfdiff-result.zip";
+  a.download = diffOnly ? "pdfdiff-result-diff-only.zip" : "pdfdiff-result.zip";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -66,8 +90,8 @@ document
       submitButton.textContent = "Preparing...";
     }
     if (downloadButton) downloadButton.disabled = true;
-    lastZipFiles = null;
-    const zipFiles: Record<string, Uint8Array> = {};
+    lastResultPages = null;
+    const resultPages = new Map<number, ResultPage>();
     let completed = false;
 
     try {
@@ -213,9 +237,12 @@ document
         const aPng = new Uint8Array(await a.getBuffer("image/png"));
         const bPng = new Uint8Array(await b.getBuffer("image/png"));
         const diffPng = new Uint8Array(await diff.getBuffer("image/png"));
-        zipFiles[`${i}/a.png`] = aPng;
-        zipFiles[`${i}/b.png`] = bPng;
-        zipFiles[`${i}/diff.png`] = diffPng;
+        resultPages.set(i, {
+          a: aPng,
+          b: bPng,
+          diff: diffPng,
+          hasDiff: totalDiff > 0,
+        });
 
         const cellA = document.createElement("td");
         const imageA = document.createElement("img");
@@ -260,8 +287,8 @@ document
         submitButton.disabled = false;
         submitButton.textContent = originalSubmitText;
       }
-      if (completed && Object.keys(zipFiles).length > 0) {
-        lastZipFiles = zipFiles;
+      if (completed && resultPages.size > 0) {
+        lastResultPages = resultPages;
         if (downloadButton) downloadButton.disabled = false;
       }
     }
