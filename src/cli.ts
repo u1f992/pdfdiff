@@ -89,13 +89,10 @@ class PngWriterPool {
 function bitmapToTransferable(
   src: Buffer | Uint8Array | Uint8ClampedArray | number[],
 ): ArrayBuffer {
-  const view =
-    src instanceof Uint8Array || src instanceof Uint8ClampedArray
-      ? src
-      : Uint8Array.from(src as ArrayLike<number>);
-  const out = new ArrayBuffer(view.byteLength);
-  new Uint8Array(out).set(view);
-  return out;
+  if (src instanceof Uint8Array || src instanceof Uint8ClampedArray) {
+    return src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength);
+  }
+  return Uint8Array.from(src as ArrayLike<number>).buffer;
 }
 
 const _wallSpan = perf.span("cli.wallTotal_ms");
