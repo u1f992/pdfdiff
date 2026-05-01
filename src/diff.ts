@@ -15,8 +15,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import * as jimp from "jimp";
-
 import { type JimpInstance } from "./jimp.ts";
 import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
 import { type RGBAColor } from "./rgba-color.ts";
@@ -35,34 +33,51 @@ export function drawDifference(
   align: AlignStrategy,
 ) {
   const [aNew, bNew, maskNew] = alignSize([a, b, mask], align);
+  const width = aNew.width;
+  const height = aNew.height;
+  const aData = aNew.bitmap.data;
+  const bData = bNew.bitmap.data;
+  const mData = maskNew.bitmap.data;
 
-  const addColor = jimp.rgbaToInt(...pallet.addition);
-  const delColor = jimp.rgbaToInt(...pallet.deletion);
-  const modColor = jimp.rgbaToInt(...pallet.modification);
+  const diffImage = createEmptyImage(width, height);
+  const dData = diffImage.bitmap.data;
 
-  const diffImage = createEmptyImage(aNew.width, aNew.height);
-  const addition = [] as [number, number][];
-  const deletion = [] as [number, number][];
-  const modification = [] as [number, number][];
+  const addition: [number, number][] = [];
+  const deletion: [number, number][] = [];
+  const modification: [number, number][] = [];
 
-  for (let x = 0; x < aNew.width; x++) {
-    for (let y = 0; y < aNew.height; y++) {
-      const intA = aNew.getPixelColor(x, y);
-      const intB = bNew.getPixelColor(x, y);
-      const colorA = jimp.intToRGBA(intA);
-      const colorB = jimp.intToRGBA(intB);
-      const masked = jimp.intToRGBA(maskNew.getPixelColor(x, y)).a !== 0;
-      if (masked || intA === intB || (colorA.a === 0 && colorB.a === 0)) {
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      const idx = (y * width + x) * 4;
+      if (mData[idx + 3]! !== 0) continue;
+      const aAlpha = aData[idx + 3]!;
+      const bAlpha = bData[idx + 3]!;
+      if (
+        aAlpha === bAlpha &&
+        aData[idx] === bData[idx] &&
+        aData[idx + 1] === bData[idx + 1] &&
+        aData[idx + 2] === bData[idx + 2]
+      ) {
         continue;
       }
-      const [target, color] =
-        colorA.a === 0 && colorB.a !== 0
-          ? [addition, addColor]
-          : colorA.a !== 0 && colorB.a === 0
-            ? [deletion, delColor]
-            : [modification, modColor];
+      if (aAlpha === 0 && bAlpha === 0) continue;
+      let target: [number, number][];
+      let color: Readonly<RGBAColor>;
+      if (aAlpha === 0) {
+        target = addition;
+        color = pallet.addition;
+      } else if (bAlpha === 0) {
+        target = deletion;
+        color = pallet.deletion;
+      } else {
+        target = modification;
+        color = pallet.modification;
+      }
       target.push([x, y]);
-      diffImage.setPixelColor(color, x, y);
+      dData[idx] = color[0];
+      dData[idx + 1] = color[1];
+      dData[idx + 2] = color[2];
+      dData[idx + 3] = color[3];
     }
   }
 

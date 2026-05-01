@@ -117,12 +117,34 @@ export function composeLayers(
   canvasHeight: number,
   layers: [JimpInstance, number][],
 ) {
-  return layers.reduce(
-    (acc, [image, opacity]) =>
-      acc.composite(image, 0, 0, {
-        mode: jimp.BlendMode.SRC_OVER,
-        opacitySource: opacity,
-      }),
-    createEmptyImage(canvasWidth, canvasHeight),
-  );
+  const canvas = createEmptyImage(canvasWidth, canvasHeight);
+  const dData = canvas.bitmap.data;
+  for (const [image, opacity] of layers) {
+    const sData = image.bitmap.data;
+    const srcWidth = image.width;
+    const w = Math.min(canvasWidth, srcWidth);
+    const h = Math.min(canvasHeight, image.height);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dIdx = (y * canvasWidth + x) * 4;
+        const sIdx = (y * srcWidth + x) * 4;
+        const sa = (sData[sIdx + 3]! / 255) * opacity;
+        if (sa === 0) continue;
+        const da = dData[dIdx + 3]! / 255;
+        const oa = sa + da * (1 - sa);
+        if (oa === 0) continue;
+        const sw = sa / oa;
+        const dw = (da * (1 - sa)) / oa;
+        dData[dIdx] = Math.round(sData[sIdx]! * sw + dData[dIdx]! * dw);
+        dData[dIdx + 1] = Math.round(
+          sData[sIdx + 1]! * sw + dData[dIdx + 1]! * dw,
+        );
+        dData[dIdx + 2] = Math.round(
+          sData[sIdx + 2]! * sw + dData[dIdx + 2]! * dw,
+        );
+        dData[dIdx + 3] = Math.round(oa * 255);
+      }
+    }
+  }
+  return canvas;
 }
