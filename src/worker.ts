@@ -26,6 +26,7 @@ import {
 import type { JimpInstance } from "./jimp.ts";
 import { pageToImage } from "./pdf.ts";
 import { perf, type Counters } from "./perf.ts";
+import { sliceBackingBuffer } from "./transferable.ts";
 
 export type InitMessage = {
   type: "init";
@@ -78,15 +79,6 @@ let opts: {
   align: AlignStrategy;
 };
 
-function toTransferable(
-  src: Buffer | Uint8Array | Uint8ClampedArray | number[],
-): ArrayBuffer {
-  if (src instanceof Uint8Array || src instanceof Uint8ClampedArray) {
-    return src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength);
-  }
-  return Uint8Array.from(src as ArrayLike<number>).buffer;
-}
-
 async function processPage(index: number): Promise<PageResultMessage> {
   const sLoad = perf.span("worker.pageToImageAll_ms");
   const [pageA, pageB, pageMask] = (await Promise.all([
@@ -122,9 +114,9 @@ async function processPage(index: number): Promise<PageResultMessage> {
   sCompose.stop();
 
   const sXfer = perf.span("worker.toTransferable_ms");
-  const aBuf = toTransferable(pageA.bitmap.data);
-  const bBuf = toTransferable(pageB.bitmap.data);
-  const dBuf = toTransferable(diff.bitmap.data);
+  const aBuf = sliceBackingBuffer(pageA.bitmap.data);
+  const bBuf = sliceBackingBuffer(pageB.bitmap.data);
+  const dBuf = sliceBackingBuffer(diff.bitmap.data);
   sXfer.stop();
   perf.incr("worker.pages");
 

@@ -32,6 +32,7 @@ import {
   visualizeDifferences,
   perf,
 } from "./index.ts";
+import { sliceBackingBuffer } from "./transferable.ts";
 import { VERSION } from "./version.ts";
 
 class PngWriterPool {
@@ -84,15 +85,6 @@ class PngWriterPool {
   async terminate(): Promise<void> {
     await Promise.all(this.workers.map((w) => w.terminate()));
   }
-}
-
-function bitmapToTransferable(
-  src: Buffer | Uint8Array | Uint8ClampedArray | number[],
-): ArrayBuffer {
-  if (src instanceof Uint8Array || src instanceof Uint8ClampedArray) {
-    return src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength);
-  }
-  return Uint8Array.from(src as ArrayLike<number>).buffer;
 }
 
 const _wallSpan = perf.span("cli.wallTotal_ms");
@@ -246,9 +238,9 @@ for await (const [
   const dir = path.join(outDir, i.toString(10));
   fs.mkdirSync(dir, { recursive: true });
   const sSubmit = perf.span("cli.poolSubmit_ms");
-  const aBuf = bitmapToTransferable(a.bitmap.data);
-  const bBuf = bitmapToTransferable(b.bitmap.data);
-  const dBuf = bitmapToTransferable(diff.bitmap.data);
+  const aBuf = sliceBackingBuffer(a.bitmap.data);
+  const bBuf = sliceBackingBuffer(b.bitmap.data);
+  const dBuf = sliceBackingBuffer(diff.bitmap.data);
   pendingWrites.push(
     writerPool.submit({
       width: a.width,
