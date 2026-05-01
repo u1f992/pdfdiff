@@ -9,10 +9,12 @@ import { VERSION } from "./version.ts";
 async function encodeBitmapToPng(img: {
   width: number;
   height: number;
-  bitmap: { data: Uint8Array | Uint8ClampedArray };
+  bitmap: {
+    data: Uint8Array<ArrayBuffer> | Uint8ClampedArray<ArrayBuffer>;
+  };
 }): Promise<Uint8Array> {
   const data = img.bitmap.data;
-  const view =
+  const view: Uint8ClampedArray<ArrayBuffer> =
     data instanceof Uint8ClampedArray
       ? data
       : new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);

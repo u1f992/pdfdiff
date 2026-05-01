@@ -69,7 +69,7 @@ function alignImage(
   targetWidth: number,
   targetHeight: number,
   align: AlignStrategy,
-) {
+): JimpInstance {
   if (align === "resize") {
     return img.resize({ w: targetWidth, h: targetHeight });
   } else {
