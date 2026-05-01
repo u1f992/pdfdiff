@@ -140,5 +140,11 @@ export function drawDifference(
   perf.incr("diff.totalPixels", width * height);
   perf.incr("diff.pages");
 
-  return { diff: diffImage, addition, deletion, modification };
+  return {
+    diff: diffImage,
+    addition,
+    deletion,
+    modification,
+    hasDiff: diffPixels > 0,
+  };
 }

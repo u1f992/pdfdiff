@@ -60,7 +60,7 @@ export type PageResultMessage = {
   addition: [number, number][];
   deletion: [number, number][];
   modification: [number, number][];
-  perf?: Counters;
+  perf?: Counters | undefined;
 };
 
 export type ErrorMessage = {
@@ -111,15 +111,17 @@ async function processPage(index: number): Promise<PageResultMessage> {
     addition,
     deletion,
     modification,
+    hasDiff,
   } = drawDifference(pageA, pageB, pageMask, opts.pallet, opts.align);
   sDiff.stop();
 
   const sCompose = perf.span("worker.composeLayers_ms");
-  const diff = composeLayers(pageA.width, pageA.height, [
+  const layers: [JimpInstance, number][] = [
     [pageA, 0.2],
     [pageB, 0.2],
-    [diffLayer, 1],
-  ]);
+  ];
+  if (hasDiff) layers.push([diffLayer, 1]);
+  const diff = composeLayers(pageA.width, pageA.height, layers);
   sCompose.stop();
 
   const sXfer = perf.span("worker.toTransferable_ms");
