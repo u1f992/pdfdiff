@@ -22,6 +22,7 @@ import Worker from "web-worker";
 import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
+import { perf } from "./perf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
 import { VERSION } from "./version.ts";
 import type { JimpInstance } from "./jimp.ts";
@@ -34,7 +35,7 @@ import type {
   ReadyMessage,
 } from "./worker.ts";
 
-export { withIndex, isValidAlignStrategy, parseHex, formatHex };
+export { withIndex, isValidAlignStrategy, parseHex, formatHex, perf };
 
 type Options = {
   dpi: number;
@@ -155,7 +156,8 @@ function workerUrl(): URL {
 }
 
 function pageResultToResult(msg: PageResultMessage): Result {
-  return {
+  const sP = perf.span("main.pageResultToResult_ms");
+  const r = {
     a: jimp.Jimp.fromBitmap({
       width: msg.a.width,
       height: msg.a.height,
@@ -175,6 +177,10 @@ function pageResultToResult(msg: PageResultMessage): Result {
     deletion: msg.deletion,
     modification: msg.modification,
   };
+  sP.stop();
+  perf.incr("main.resultsReceived");
+  if (msg.perf) perf.merge(msg.perf);
+  return r;
 }
 
 export async function* visualizeDifferences(
@@ -259,6 +265,7 @@ export async function* visualizeDifferences(
           resolve(result);
         } else {
           buffered.set(idx, result);
+          perf.setMax("main.bufferedPeak", buffered.size);
         }
       } catch (e) {
         workerError = e;
@@ -278,10 +285,14 @@ export async function* visualizeDifferences(
         buffered.delete(i);
         r = buf;
       } else {
+        const sWait = perf.span("main.yieldWaitMain_ms");
         r = await new Promise<Result>((resolve) => resolvers.set(i, resolve));
+        sWait.stop();
         if (workerError !== null) throw workerError;
       }
+      const sYield = perf.span("main.consumerTime_ms");
       yield r;
+      sYield.stop();
     }
     await Promise.all(loops);
   } finally {

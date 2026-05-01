@@ -17,6 +17,7 @@
 
 import * as jimp from "jimp";
 import { type JimpInstance } from "./jimp.ts";
+import { perf } from "./perf.ts";
 
 export function createEmptyImage(width: number, height: number) {
   return new jimp.Jimp({
@@ -117,6 +118,7 @@ export function composeLayers(
   canvasHeight: number,
   layers: [JimpInstance, number][],
 ) {
+  const _span = perf.span("image.compose_ms");
   const canvas = createEmptyImage(canvasWidth, canvasHeight);
   const dData = canvas.bitmap.data;
   for (const [image, opacity] of layers) {
@@ -146,5 +148,6 @@ export function composeLayers(
       }
     }
   }
+  _span.stop();
   return canvas;
 }

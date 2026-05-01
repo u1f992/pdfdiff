@@ -28,8 +28,11 @@ import {
   parseHex,
   formatHex,
   visualizeDifferences,
+  perf,
 } from "./index.ts";
 import { VERSION } from "./version.ts";
+
+const _wallSpan = perf.span("cli.wallTotal_ms");
 
 const {
   positionals,
@@ -149,6 +152,7 @@ if (Number.isNaN(workers) || workers < 1) {
 }
 
 fs.mkdirSync(outDir, { recursive: true });
+const _loopSpan = perf.span("cli.loopWall_ms");
 for await (const [
   i,
   { a, b, diff, addition, deletion, modification },
@@ -172,16 +176,25 @@ for await (const [
   );
   const dir = path.join(outDir, i.toString(10));
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, "a.png"),
-    new Uint8Array(await a.getBuffer("image/png")),
-  );
-  fs.writeFileSync(
-    path.join(dir, "b.png"),
-    new Uint8Array(await b.getBuffer("image/png")),
-  );
-  fs.writeFileSync(
-    path.join(dir, "diff.png"),
-    new Uint8Array(await diff.getBuffer("image/png")),
-  );
+  const sEnc = perf.span("cli.getBuffer_ms");
+  const aPng = new Uint8Array(await a.getBuffer("image/png"));
+  const bPng = new Uint8Array(await b.getBuffer("image/png"));
+  const dPng = new Uint8Array(await diff.getBuffer("image/png"));
+  sEnc.stop();
+  const sWrite = perf.span("cli.writeFile_ms");
+  fs.writeFileSync(path.join(dir, "a.png"), aPng);
+  fs.writeFileSync(path.join(dir, "b.png"), bPng);
+  fs.writeFileSync(path.join(dir, "diff.png"), dPng);
+  sWrite.stop();
+}
+_loopSpan.stop();
+_wallSpan.stop();
+
+if (perf.enabled) {
+  const counters = perf.dump();
+  process.stderr.write("\n=== PERF ===\n");
+  const keys = Object.keys(counters).sort();
+  const out: Record<string, number> = {};
+  for (const k of keys) out[k] = Math.round(counters[k]! * 1000) / 1000;
+  process.stderr.write(JSON.stringify(out, null, 2) + "\n");
 }

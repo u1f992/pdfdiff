@@ -19,6 +19,7 @@ import * as jimp from "jimp";
 import * as mupdf from "mupdf";
 
 import type { JimpInstance } from "./jimp.ts";
+import { perf } from "./perf.ts";
 
 export function* loadPages(pdf: mupdf.Document) {
   for (let i = 0; i < pdf.countPages(); i++) {
@@ -60,6 +61,7 @@ export async function pageToImage(
   alpha: boolean,
 ) {
   const zoom = dpi / 72;
+  const sToPixmap = perf.span("pdf.toPixmap_ms");
   const pixmap = page.toPixmap(
     [zoom, 0, 0, zoom, 0, 0],
     mupdf.ColorSpace.DeviceRGB,
@@ -67,8 +69,14 @@ export async function pageToImage(
   );
   const width = pixmap.getWidth();
   const height = pixmap.getHeight();
+  sToPixmap.stop();
+  const sRgba = perf.span("pdf.pixmapToRGBA_ms");
   const data = pixmapToRGBA(pixmap);
   pixmap.destroy();
   page.destroy();
-  return jimp.Jimp.fromBitmap({ width, height, data }) as JimpInstance;
+  sRgba.stop();
+  const sFromBitmap = perf.span("pdf.fromBitmap_ms");
+  const result = jimp.Jimp.fromBitmap({ width, height, data }) as JimpInstance;
+  sFromBitmap.stop();
+  return result;
 }

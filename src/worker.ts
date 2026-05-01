@@ -25,6 +25,7 @@ import {
 } from "./image.ts";
 import type { JimpInstance } from "./jimp.ts";
 import { pageToImage } from "./pdf.ts";
+import { perf, type Counters } from "./perf.ts";
 
 export type InitMessage = {
   type: "init";
@@ -59,6 +60,7 @@ export type PageResultMessage = {
   addition: [number, number][];
   deletion: [number, number][];
   modification: [number, number][];
+  perf?: Counters;
 };
 
 export type ErrorMessage = {
@@ -89,6 +91,7 @@ function toTransferable(
 }
 
 async function processPage(index: number): Promise<PageResultMessage> {
+  const sLoad = perf.span("worker.pageToImageAll_ms");
   const [pageA, pageB, pageMask] = (await Promise.all([
     index < pdfA.countPages()
       ? pageToImage(pdfA.loadPage(index), opts.dpi, opts.alpha)
@@ -100,40 +103,48 @@ async function processPage(index: number): Promise<PageResultMessage> {
       ? pageToImage(pdfMask.loadPage(index), opts.dpi, opts.alpha)
       : createEmptyImage(1, 1),
   ])) as [JimpInstance, JimpInstance, JimpInstance];
+  sLoad.stop();
 
+  const sDiff = perf.span("worker.drawDifference_ms");
   const {
     diff: diffLayer,
     addition,
     deletion,
     modification,
   } = drawDifference(pageA, pageB, pageMask, opts.pallet, opts.align);
+  sDiff.stop();
+
+  const sCompose = perf.span("worker.composeLayers_ms");
   const diff = composeLayers(pageA.width, pageA.height, [
     [pageA, 0.2],
     [pageB, 0.2],
     [diffLayer, 1],
   ]);
+  sCompose.stop();
+
+  const sXfer = perf.span("worker.toTransferable_ms");
+  const aBuf = toTransferable(pageA.bitmap.data);
+  const bBuf = toTransferable(pageB.bitmap.data);
+  const dBuf = toTransferable(diff.bitmap.data);
+  sXfer.stop();
+  perf.incr("worker.pages");
+
+  let pagePerf: Counters | undefined;
+  if (perf.enabled) {
+    pagePerf = perf.dump();
+    perf.reset();
+  }
 
   return {
     type: "pageResult",
     index,
-    a: {
-      width: pageA.width,
-      height: pageA.height,
-      data: toTransferable(pageA.bitmap.data),
-    },
-    b: {
-      width: pageB.width,
-      height: pageB.height,
-      data: toTransferable(pageB.bitmap.data),
-    },
-    diff: {
-      width: diff.width,
-      height: diff.height,
-      data: toTransferable(diff.bitmap.data),
-    },
+    a: { width: pageA.width, height: pageA.height, data: aBuf },
+    b: { width: pageB.width, height: pageB.height, data: bBuf },
+    diff: { width: diff.width, height: diff.height, data: dBuf },
     addition,
     deletion,
     modification,
+    perf: pagePerf,
   };
 }
 

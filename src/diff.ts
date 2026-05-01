@@ -17,6 +17,7 @@
 
 import { type JimpInstance } from "./jimp.ts";
 import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
+import { perf } from "./perf.ts";
 import { type RGBAColor } from "./rgba-color.ts";
 
 export type Pallet = {
@@ -32,19 +33,27 @@ export function drawDifference(
   pallet: Readonly<Pallet>,
   align: AlignStrategy,
 ) {
+  const sAlign = perf.span("diff.align_ms");
   const [aNew, bNew, maskNew] = alignSize([a, b, mask], align);
+  sAlign.stop();
+
   const width = aNew.width;
   const height = aNew.height;
   const aData = aNew.bitmap.data;
   const bData = bNew.bitmap.data;
   const mData = maskNew.bitmap.data;
 
+  const sCreate = perf.span("diff.createEmpty_ms");
   const diffImage = createEmptyImage(width, height);
   const dData = diffImage.bitmap.data;
+  sCreate.stop();
 
   const addition: [number, number][] = [];
   const deletion: [number, number][] = [];
   const modification: [number, number][] = [];
+
+  const sScan = perf.span("diff.scan_ms");
+  let diffPixels = 0;
 
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) {
@@ -74,12 +83,17 @@ export function drawDifference(
         color = pallet.modification;
       }
       target.push([x, y]);
+      diffPixels++;
       dData[idx] = color[0];
       dData[idx + 1] = color[1];
       dData[idx + 2] = color[2];
       dData[idx + 3] = color[3];
     }
   }
+  sScan.stop();
+  perf.incr("diff.diffPixels", diffPixels);
+  perf.incr("diff.totalPixels", width * height);
+  perf.incr("diff.pages");
 
   return { diff: diffImage, addition, deletion, modification };
 }
