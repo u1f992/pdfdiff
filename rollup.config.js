@@ -16,6 +16,10 @@ const plugins = [
         dest: "dist",
       },
       {
+        src: "node_modules/coi-serviceworker/coi-serviceworker.min.js",
+        dest: "dist",
+      },
+      {
         src: "src/index.html",
         dest: "dist",
       },
