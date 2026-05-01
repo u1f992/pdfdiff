@@ -10,7 +10,11 @@
     "test": "node --test",
     "test:cli": "node src/cli.js test/a.pdf test/b.pdf out --mask test/mask.pdf --dpi 300 && echo \"expected: Page 1, Addition: 7500, Deletion: 7500, Modification: 7500\"",
     "build:version": "node scripts/version.ts",
-    "build": "npm run build:version && rollup -c",
+    "build:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:5.0.7 scripts/build-wasm.sh",
+    "format:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:5.0.7 scripts/build-wasm.sh format",
+    "tidy:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:5.0.7 scripts/build-wasm.sh tidy",
+    "clean:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:5.0.7 scripts/build-wasm.sh clean",
+    "build": "npm run build:wasm && npm run build:version && rollup -c",
     "serve": "npm run build && http-server dist"
   },
   "repository": {

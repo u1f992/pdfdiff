@@ -155,6 +155,15 @@ function workerUrl(): URL {
   return new URL(`${file}?v=${encodeURIComponent(VERSION)}`, import.meta.url);
 }
 
+function unpackCoords(buf: ArrayBuffer): [number, number][] {
+  const arr = new Int32Array(buf);
+  const out: [number, number][] = new Array(arr.length >>> 1);
+  for (let i = 0, j = 0; j < out.length; i += 2, j++) {
+    out[j] = [arr[i]!, arr[i + 1]!];
+  }
+  return out;
+}
+
 function pageResultToResult(msg: PageResultMessage): Result {
   const sP = perf.span("main.pageResultToResult_ms");
   const r = {
@@ -173,9 +182,9 @@ function pageResultToResult(msg: PageResultMessage): Result {
       height: msg.diff.height,
       data: new Uint8Array(msg.diff.data),
     }) as JimpInstance,
-    addition: msg.addition,
-    deletion: msg.deletion,
-    modification: msg.modification,
+    addition: unpackCoords(msg.addition),
+    deletion: unpackCoords(msg.deletion),
+    modification: unpackCoords(msg.modification),
   };
   sP.stop();
   perf.incr("main.resultsReceived");

@@ -17,16 +17,14 @@
 
 import * as mupdf from "mupdf";
 
-import { drawDifference, type Pallet } from "./diff.ts";
-import {
-  composeLayers,
-  createEmptyImage,
-  type AlignStrategy,
-} from "./image.ts";
+import { type Pallet } from "./diff.ts";
+import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
 import type { JimpInstance } from "./jimp.ts";
 import { pageToImage } from "./pdf.ts";
 import { perf, type Counters } from "./perf.ts";
+import { type RGBAColor } from "./rgba-color.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
+import createWasmModule, { type MainModule } from "./wasm/core.js";
 
 export type InitMessage = {
   type: "init";
@@ -58,15 +56,22 @@ export type PageResultMessage = {
   a: { width: number; height: number; data: ArrayBuffer };
   b: { width: number; height: number; data: ArrayBuffer };
   diff: { width: number; height: number; data: ArrayBuffer };
-  addition: [number, number][];
-  deletion: [number, number][];
-  modification: [number, number][];
+  addition: ArrayBuffer;
+  deletion: ArrayBuffer;
+  modification: ArrayBuffer;
   perf?: Counters | undefined;
 };
 
 export type ErrorMessage = {
   type: "error";
   message: string;
+};
+
+type WasmProcessResult = {
+  overlay: Uint8Array<ArrayBuffer>;
+  addition: Int32Array<ArrayBuffer>;
+  deletion: Int32Array<ArrayBuffer>;
+  modification: Int32Array<ArrayBuffer>;
 };
 
 let pdfA: mupdf.Document;
@@ -79,9 +84,19 @@ let opts: {
   align: AlignStrategy;
 };
 
+let wasm: MainModule | null = null;
+async function getWasm(): Promise<MainModule> {
+  if (!wasm) wasm = await createWasmModule();
+  return wasm;
+}
+
+function packColor([r, g, b, a]: RGBAColor): number {
+  return ((r << 24) | (g << 16) | (b << 8) | a) >>> 0;
+}
+
 async function processPage(index: number): Promise<PageResultMessage> {
   const sLoad = perf.span("worker.pageToImageAll_ms");
-  const [pageA, pageB, pageMask] = (await Promise.all([
+  const [pageA, pageB, pageMaskOrNull] = (await Promise.all([
     index < pdfA.countPages()
       ? pageToImage(pdfA.loadPage(index), opts.dpi, opts.alpha)
       : createEmptyImage(1, 1),
@@ -94,29 +109,51 @@ async function processPage(index: number): Promise<PageResultMessage> {
   ])) as [JimpInstance, JimpInstance, JimpInstance | null];
   sLoad.stop();
 
-  const sDiff = perf.span("worker.drawDifference_ms");
-  const {
-    diff: diffLayer,
-    addition,
-    deletion,
-    modification,
-    hasDiff,
-  } = drawDifference(pageA, pageB, pageMask, opts.pallet, opts.align);
-  sDiff.stop();
+  const sAlign = perf.span("worker.alignSize_ms");
+  let aAligned: JimpInstance;
+  let bAligned: JimpInstance;
+  let maskAligned: JimpInstance | null;
+  if (pageMaskOrNull !== null) {
+    [aAligned, bAligned, maskAligned] = alignSize(
+      [pageA, pageB, pageMaskOrNull],
+      opts.align,
+    );
+  } else {
+    [aAligned, bAligned] = alignSize([pageA, pageB], opts.align);
+    maskAligned = null;
+  }
+  sAlign.stop();
 
-  const sCompose = perf.span("worker.composeLayers_ms");
-  const layers: [JimpInstance, number][] = [
-    [pageA, 0.2],
-    [pageB, 0.2],
-  ];
-  if (hasDiff) layers.push([diffLayer, 1]);
-  const diff = composeLayers(pageA.width, pageA.height, layers);
-  sCompose.stop();
+  const width = aAligned.width;
+  const height = aAligned.height;
+  const aData = aAligned.bitmap.data;
+  const bData = bAligned.bitmap.data;
+  const maskData = maskAligned !== null ? maskAligned.bitmap.data : null;
+
+  const sProcess = perf.span("worker.processPage_ms");
+  const wasmModule = await getWasm();
+  const result = wasmModule.processPage(
+    aData,
+    bData,
+    maskData,
+    width,
+    height,
+    packColor(opts.pallet.addition),
+    packColor(opts.pallet.deletion),
+    packColor(opts.pallet.modification),
+  ) as WasmProcessResult | number;
+  if (typeof result === "number") {
+    throw new Error(`wasm processPage failed: ${result}`);
+  }
+  sProcess.stop();
 
   const sXfer = perf.span("worker.toTransferable_ms");
-  const aBuf = sliceBackingBuffer(pageA.bitmap.data);
-  const bBuf = sliceBackingBuffer(pageB.bitmap.data);
-  const dBuf = sliceBackingBuffer(diff.bitmap.data);
+  const aBuf = sliceBackingBuffer(aData);
+  const bBuf = sliceBackingBuffer(bData);
+  const dBuf = sliceBackingBuffer(result.overlay);
+  const addBuf = sliceBackingBuffer(result.addition);
+  const delBuf = sliceBackingBuffer(result.deletion);
+  const modBuf = sliceBackingBuffer(result.modification);
   sXfer.stop();
   perf.incr("worker.pages");
 
@@ -129,12 +166,12 @@ async function processPage(index: number): Promise<PageResultMessage> {
   return {
     type: "pageResult",
     index,
-    a: { width: pageA.width, height: pageA.height, data: aBuf },
-    b: { width: pageB.width, height: pageB.height, data: bBuf },
-    diff: { width: diff.width, height: diff.height, data: dBuf },
-    addition,
-    deletion,
-    modification,
+    a: { width, height, data: aBuf },
+    b: { width, height, data: bBuf },
+    diff: { width, height, data: dBuf },
+    addition: addBuf,
+    deletion: delBuf,
+    modification: modBuf,
     perf: pagePerf,
   };
 }
@@ -157,6 +194,7 @@ self.addEventListener(
           align: msg.align,
         };
         if (pdfA.countPages() > 0) pdfA.loadPage(0).destroy();
+        await getWasm();
         const ready: ReadyMessage = { type: "ready" };
         self.postMessage(ready);
       } else if (msg.type === "page") {
@@ -165,6 +203,9 @@ self.addEventListener(
           result.a.data,
           result.b.data,
           result.diff.data,
+          result.addition,
+          result.deletion,
+          result.modification,
         ]);
       }
     } catch (err) {

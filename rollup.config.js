@@ -27,6 +27,10 @@ const plugins = [
         src: "src/style.css",
         dest: "dist",
       },
+      {
+        src: "src/wasm/core.wasm",
+        dest: "dist",
+      },
     ],
   }),
 ];
