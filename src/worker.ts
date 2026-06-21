@@ -15,12 +15,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import * as mupdf from "mupdf";
-
+import { decodePng } from "./decode.ts";
 import { type Pallet } from "./diff.ts";
 import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
 import type { JimpInstance } from "./jimp.ts";
-import { pageToImage } from "./pdf.ts";
 import { perf, type Counters } from "./perf.ts";
 import { type RGBAColor } from "./rgba-color.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
@@ -28,11 +26,6 @@ import createWasmModule, { type MainModule } from "./wasm/core.js";
 
 export type InitMessage = {
   type: "init";
-  aBytes: Uint8Array;
-  bBytes: Uint8Array;
-  maskBytes: Uint8Array | null;
-  dpi: number;
-  alpha: boolean;
   pallet: Pallet;
   align: AlignStrategy;
 };
@@ -40,6 +33,11 @@ export type InitMessage = {
 export type PageMessage = {
   type: "page";
   index: number;
+  // PNG bytes rendered on the main thread, or null when the source PDF has no
+  // such page (the diff then treats it as an empty/transparent page).
+  a: ArrayBuffer | null;
+  b: ArrayBuffer | null;
+  mask: ArrayBuffer | null;
 };
 
 export type LoadedMessage = {
@@ -74,12 +72,7 @@ type WasmProcessResult = {
   modification: Int32Array<ArrayBuffer>;
 };
 
-let pdfA: mupdf.Document;
-let pdfB: mupdf.Document;
-let pdfMask: mupdf.Document;
 let opts: {
-  dpi: number;
-  alpha: boolean;
   pallet: Pallet;
   align: AlignStrategy;
 };
@@ -94,18 +87,13 @@ function packColor([r, g, b, a]: RGBAColor): number {
   return ((r << 24) | (g << 16) | (b << 8) | a) >>> 0;
 }
 
-async function processPage(index: number): Promise<PageResultMessage> {
-  const sLoad = perf.span("worker.pageToImageAll_ms");
+async function processPage(msg: PageMessage): Promise<PageResultMessage> {
+  const index = msg.index;
+  const sLoad = perf.span("worker.decodeAll_ms");
   const [pageA, pageB, pageMaskOrNull] = (await Promise.all([
-    index < pdfA.countPages()
-      ? pageToImage(pdfA.loadPage(index), opts.dpi, opts.alpha)
-      : createEmptyImage(1, 1),
-    index < pdfB.countPages()
-      ? pageToImage(pdfB.loadPage(index), opts.dpi, opts.alpha)
-      : createEmptyImage(1, 1),
-    index < pdfMask.countPages()
-      ? pageToImage(pdfMask.loadPage(index), opts.dpi, opts.alpha)
-      : Promise.resolve(null),
+    msg.a !== null ? decodePng(msg.a) : createEmptyImage(1, 1),
+    msg.b !== null ? decodePng(msg.b) : createEmptyImage(1, 1),
+    msg.mask !== null ? decodePng(msg.mask) : Promise.resolve(null),
   ])) as [JimpInstance, JimpInstance, JimpInstance | null];
   sLoad.stop();
 
@@ -182,23 +170,15 @@ self.addEventListener(
     try {
       const msg = e.data;
       if (msg.type === "init") {
-        pdfA = mupdf.PDFDocument.openDocument(msg.aBytes, "application/pdf");
-        pdfB = mupdf.PDFDocument.openDocument(msg.bBytes, "application/pdf");
-        pdfMask = msg.maskBytes
-          ? mupdf.PDFDocument.openDocument(msg.maskBytes, "application/pdf")
-          : new mupdf.PDFDocument();
         opts = {
-          dpi: msg.dpi,
-          alpha: msg.alpha,
           pallet: msg.pallet,
           align: msg.align,
         };
-        if (pdfA.countPages() > 0) pdfA.loadPage(0).destroy();
         await getWasm();
         const ready: ReadyMessage = { type: "ready" };
         self.postMessage(ready);
       } else if (msg.type === "page") {
-        const result = await processPage(msg.index);
+        const result = await processPage(msg);
         self.postMessage(result, [
           result.a.data,
           result.b.data,

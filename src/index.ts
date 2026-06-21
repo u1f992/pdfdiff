@@ -16,14 +16,15 @@
  */
 
 import * as jimp from "jimp";
-import * as mupdf from "mupdf";
 import Worker from "web-worker";
 
 import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
+import { countPages, renderPageRangePng } from "./pdf.ts";
 import { perf } from "./perf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
+import { sliceBackingBuffer } from "./transferable.ts";
 import { VERSION } from "./version.ts";
 import type { JimpInstance } from "./jimp.ts";
 import type {
@@ -55,6 +56,15 @@ type Result = {
   modification: [number, number][];
 };
 
+// Default parallelism scales with the machine: rendering and diffing run across
+// several workers, so the out-of-the-box run uses the CPU rather than a single
+// core. Capped at 4 to keep the default memory footprint and oversubscription
+// modest; raise --workers explicitly for large jobs on big machines.
+export const defaultWorkers = Math.max(
+  1,
+  Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 4),
+);
+
 export const defaultOptions: Options = {
   dpi: 150,
   alpha: true,
@@ -65,24 +75,8 @@ export const defaultOptions: Options = {
     deletion: [0xff, 0x57, 0x24, 0xff],
     modification: [0xff, 0xc1, 0x05, 0xff],
   },
-  workers: 1,
+  workers: defaultWorkers,
 };
-
-function asSharedBytes(bytes: Uint8Array): Uint8Array {
-  const isNode =
-    typeof globalThis.process !== "undefined" &&
-    !!globalThis.process.versions?.node;
-  const coiOk =
-    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated ===
-    true;
-  if (typeof SharedArrayBuffer !== "undefined" && (isNode || coiOk)) {
-    const sab = new SharedArrayBuffer(bytes.byteLength);
-    const view = new Uint8Array(sab);
-    view.set(bytes);
-    return view;
-  }
-  return new Uint8Array(bytes);
-}
 
 type WorkerResponse =
   | LoadedMessage
@@ -136,12 +130,29 @@ class WorkerHandle {
     });
   }
 
-  processPage(index: number): Promise<PageResultMessage> {
+  processDiff(
+    index: number,
+    a: Uint8Array<ArrayBuffer> | null,
+    b: Uint8Array<ArrayBuffer> | null,
+    mask: Uint8Array<ArrayBuffer> | null,
+  ): Promise<PageResultMessage> {
     return new Promise<PageResultMessage>((resolve, reject) => {
       this.pendingResolve = resolve as (data: WorkerResponse) => void;
       this.pendingReject = reject;
-      const msg: PageMessage = { type: "page", index };
-      this.worker.postMessage(msg);
+      const aBuf = a !== null ? sliceBackingBuffer(a) : null;
+      const bBuf = b !== null ? sliceBackingBuffer(b) : null;
+      const maskBuf = mask !== null ? sliceBackingBuffer(mask) : null;
+      const msg: PageMessage = {
+        type: "page",
+        index,
+        a: aBuf,
+        b: bBuf,
+        mask: maskBuf,
+      };
+      const transfer = [aBuf, bBuf, maskBuf].filter(
+        (buf): buf is ArrayBuffer => buf !== null,
+      );
+      this.worker.postMessage(msg, transfer);
     });
   }
 
@@ -211,62 +222,144 @@ export async function* visualizeDifferences(
     workers: options?.workers ?? defaultOptions.workers,
   };
 
-  const probe = mupdf.PDFDocument.openDocument(a, "application/pdf");
-  const probeB = mupdf.PDFDocument.openDocument(b, "application/pdf");
-  const probeMask =
+  const [aPages, bPages, maskPages] = await Promise.all([
+    countPages(a),
+    countPages(b),
     typeof merged.mask !== "undefined"
-      ? mupdf.PDFDocument.openDocument(merged.mask, "application/pdf")
-      : new mupdf.PDFDocument();
-  const maxPages = Math.max(
-    probe.countPages(),
-    probeB.countPages(),
-    probeMask.countPages(),
-  );
-  probe.destroy();
-  probeB.destroy();
-  probeMask.destroy();
+      ? countPages(merged.mask)
+      : Promise.resolve(0),
+  ]);
+  const maxPages = Math.max(aPages, bPages, maskPages);
 
   if (maxPages === 0) return;
 
-  const aBytes = asSharedBytes(a);
-  const bBytes = asSharedBytes(b);
-  const maskBytes =
-    typeof merged.mask !== "undefined" ? asSharedBytes(merged.mask) : null;
+  const mask = merged.mask;
+  const hasMask = typeof mask !== "undefined" && maskPages > 0;
+  const numDocs = hasMask ? 3 : 2;
 
   const initMsg: InitMessage = {
     type: "init",
-    aBytes,
-    bBytes,
-    maskBytes,
-    dpi: merged.dpi,
-    alpha: merged.alpha,
     pallet: merged.pallet,
     align: merged.align,
   };
 
   const N = Math.max(1, Math.min(merged.workers, maxPages));
   const url = workerUrl();
-  const worker0 = new WorkerHandle(url);
-  await worker0.init(initMsg);
-
-  const buffered = new Map<number, Result>();
-  let nextToAssign = 0;
-
-  const workers: WorkerHandle[] = [worker0];
-  for (let i = 1; i < N; i++) {
+  const workers: WorkerHandle[] = [];
+  for (let i = 0; i < N; i++) {
     const w = new WorkerHandle(url);
     await w.init(initMsg);
     workers.push(w);
   }
 
+  let aborted: unknown = null;
+
+  // One PNG slot per page per document, fulfilled as render chunks complete.
+  // Pages past a document's page count resolve to null (an empty/transparent
+  // page). The defensive catch keeps a chunk failure from surfacing as an
+  // unhandled rejection before a diff lane awaits the slot.
+  type Slot = {
+    p: Promise<Uint8Array<ArrayBuffer> | null>;
+    resolve: (v: Uint8Array<ArrayBuffer> | null) => void;
+    reject: (e: unknown) => void;
+  };
+  const makeSlots = (count: number): Slot[] =>
+    Array.from({ length: maxPages }, (_, i) => {
+      if (i >= count) {
+        return { p: Promise.resolve(null), resolve: () => {}, reject: () => {} };
+      }
+      let resolve!: (v: Uint8Array<ArrayBuffer> | null) => void;
+      let reject!: (e: unknown) => void;
+      const p = new Promise<Uint8Array<ArrayBuffer> | null>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      p.catch(() => {});
+      return { p, resolve, reject };
+    });
+  const slots = {
+    a: makeSlots(aPages),
+    b: makeSlots(bPages),
+    mask: makeSlots(hasMask ? maskPages : 0),
+  };
+
+  // Render chunk tasks: batch several pages per gs() call to amortize startup,
+  // interleaving A/B/mask by page range so the early pages of every document
+  // become available together (which keeps the diff stage fed).
+  // Render concurrency. Aim for ~2x as many chunks as render slots so pages
+  // arrive in waves and the diff/decode stage overlaps later renders instead of
+  // waiting for one big batch. A floor keeps each chunk large enough to amortize
+  // Ghostscript's per-call startup: when there are many slots relative to pages,
+  // the slots are already saturated, so batching beats finer streaming.
+  const MIN_CHUNK = 4;
+  const R = Math.max(merged.workers, numDocs);
+  const totalRenderPages = aPages + bPages + (hasMask ? maskPages : 0);
+  const chunkSize = Math.max(
+    1,
+    Math.min(maxPages, Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R)))),
+  );
+  type Task = { bytes: Uint8Array; start: number; end: number; slots: Slot[] };
+  const tasks: Task[] = [];
+  const pushChunk = (
+    bytes: Uint8Array | undefined,
+    count: number,
+    target: Slot[],
+    start: number,
+  ) => {
+    if (bytes === undefined || start >= count) return;
+    tasks.push({
+      bytes,
+      start,
+      end: Math.min(start + chunkSize, count) - 1,
+      slots: target,
+    });
+  };
+  for (let start = 0; start < maxPages; start += chunkSize) {
+    pushChunk(a, aPages, slots.a, start);
+    pushChunk(b, bPages, slots.b, start);
+    if (hasMask) pushChunk(mask, maskPages, slots.mask, start);
+  }
+
+  let taskIdx = 0;
+  const renderLoops = Array.from(
+    { length: Math.min(R, tasks.length) },
+    async () => {
+      while (taskIdx < tasks.length && aborted === null) {
+        const t = tasks[taskIdx++]!;
+        try {
+          const pngs = await renderPageRangePng(
+            t.bytes,
+            t.start,
+            t.end,
+            merged.dpi,
+            merged.alpha,
+          );
+          for (let i = t.start; i <= t.end; i++) {
+            t.slots[i]!.resolve(pngs.get(i) ?? null);
+          }
+        } catch (e) {
+          aborted = e;
+          for (let i = t.start; i <= t.end; i++) t.slots[i]!.reject(e);
+        }
+      }
+    },
+  );
+
+  const buffered = new Map<number, Result>();
+  let nextToAssign = 0;
   const resolvers = new Map<number, (r: Result) => void>();
   let workerError: unknown = null;
 
-  const loops = workers.map(async (w) => {
+  const diffLoops = workers.map(async (w) => {
     while (nextToAssign < maxPages && workerError === null) {
       const idx = nextToAssign++;
       try {
-        const msg = await w.processPage(idx);
+        const [aPng, bPng, maskPng] = await Promise.all([
+          slots.a[idx]!.p,
+          slots.b[idx]!.p,
+          slots.mask[idx]!.p,
+        ]);
+        const msg = await w.processDiff(idx, aPng, bPng, maskPng);
         const result = pageResultToResult(msg);
         const resolve = resolvers.get(idx);
         if (resolve) {
@@ -278,6 +371,7 @@ export async function* visualizeDifferences(
         }
       } catch (e) {
         workerError = e;
+        aborted = e;
         for (const [, resolve] of resolvers) resolve(null as never);
         resolvers.clear();
         return;
@@ -303,8 +397,11 @@ export async function* visualizeDifferences(
       yield r;
       sYield.stop();
     }
-    await Promise.all(loops);
+    await Promise.all(diffLoops);
+    await Promise.all(renderLoops);
   } finally {
+    aborted = aborted ?? new Error("aborted");
+    await Promise.allSettled(renderLoops);
     for (const w of workers) w.terminate();
   }
 }

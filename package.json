@@ -39,6 +39,7 @@
     "fflate": "^0.8.2",
     "http-server": "^14.1.1",
     "nodehog": "^0.1.2",
+    "path-browserify": "^1.0.1",
     "prettier": "^3.5.3",
     "rollup": "^4.42.0",
     "rollup-plugin-copy": "^3.5.0",
@@ -47,9 +48,9 @@
   },
   "dependencies": {
     "@jsquash/png": "^3.1.1",
+    "@u1f992/gs-wasm": "0.3.0",
     "ix": "^7.0.0",
     "jimp": "^1.6.0",
-    "mupdf": "^1.26.2",
     "web-worker": "^1.5.0"
   }
 }

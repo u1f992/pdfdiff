@@ -138,12 +138,15 @@ OPTIONS:
     -h, --help
 
 NOTES:
-    Approximate per-worker memory:
-        a_size_MB + b_size_MB [+ mask_size_MB]    (PDF buffers in wasm)
-        + 300 MB                                  (mupdf + V8 base)
-        + (dpi / 150)^2 * 50 MB                   (pixmap working set)
-    The main process adds ~500 MB - 1 GB (varies with --workers).
-    Choose --workers so the total stays under ~80% of available memory.
+    Pages are rendered with Ghostscript (gs-wasm). Each page render spins up a
+    transient Ghostscript instance (~26 MB WASM binary plus a rasterization
+    working set that grows with --dpi). A and B (and the mask) render
+    concurrently, and --workers controls how many pages are rendered and diffed
+    in parallel, so peak memory scales with both --workers and --dpi. Each
+    in-flight page additionally holds decoded RGBA bitmaps of ~width*height*4
+    bytes. --workers defaults to the CPU core count (capped at 4); lower it to
+    reduce memory, or raise it for large jobs on big machines. Keep the total
+    under ~80% of available memory.
 `);
   process.exit(0);
 }

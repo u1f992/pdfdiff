@@ -21,6 +21,7 @@ import test from "node:test";
 
 import {
   defaultOptions,
+  defaultWorkers,
   formatHex,
   isValidAlignStrategy,
   parseHex,
@@ -50,8 +51,16 @@ test("defaultOptions", () => {
       deletion: [0xff, 0x57, 0x24, 0xff],
       modification: [0xff, 0xc1, 0x05, 0xff],
     },
-    workers: 1,
+    workers: defaultWorkers,
   });
+});
+
+test("defaultWorkers scales with cores, capped at 4", () => {
+  assert.equal(
+    defaultWorkers,
+    Math.max(1, Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 4)),
+  );
+  assert.ok(defaultWorkers >= 1 && defaultWorkers <= 4);
 });
 
 test("isValidAlignStrategy", async (ctx) => {
