@@ -144,7 +144,9 @@ NOTES:
     concurrently, and --workers controls how many pages are rendered and diffed
     in parallel, so peak memory scales with both --workers and --dpi. Each
     in-flight page additionally holds decoded RGBA bitmaps of ~width*height*4
-    bytes. Choose --workers so the total stays under ~80% of available memory.
+    bytes. --workers defaults to the CPU core count (capped at 4); lower it to
+    reduce memory, or raise it for large jobs on big machines. Keep the total
+    under ~80% of available memory.
 `);
   process.exit(0);
 }

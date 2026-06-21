@@ -149,10 +149,11 @@ document
         throw new Error();
       }
 
-      const workers = ((
-        val = (document.getElementById("workers") as HTMLInputElement | null)
-          ?.value,
-      ) => (typeof val !== "undefined" ? parseInt(val, 10) : undefined))();
+      const workersRaw = (
+        document.getElementById("workers") as HTMLInputElement | null
+      )?.value;
+      // Empty input means "use the default" (which scales with CPU cores).
+      const workers = workersRaw ? parseInt(workersRaw, 10) : undefined;
       if (
         typeof workers !== "undefined" &&
         (Number.isNaN(workers) || workers < 1)

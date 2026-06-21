@@ -56,6 +56,15 @@ type Result = {
   modification: [number, number][];
 };
 
+// Default parallelism scales with the machine: rendering and diffing run across
+// several workers, so the out-of-the-box run uses the CPU rather than a single
+// core. Capped at 4 to keep the default memory footprint and oversubscription
+// modest; raise --workers explicitly for large jobs on big machines.
+export const defaultWorkers = Math.max(
+  1,
+  Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 4),
+);
+
 export const defaultOptions: Options = {
   dpi: 150,
   alpha: true,
@@ -66,7 +75,7 @@ export const defaultOptions: Options = {
     deletion: [0xff, 0x57, 0x24, 0xff],
     modification: [0xff, 0xc1, 0x05, 0xff],
   },
-  workers: 1,
+  workers: defaultWorkers,
 };
 
 type WorkerResponse =
