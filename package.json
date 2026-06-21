@@ -23,7 +23,7 @@
   },
   "keywords": [],
   "author": "Koutaro Mukai",
-  "license": "GPL-3.0",
+  "license": "AGPL-3.0-only",
   "bugs": {
     "url": "https://github.com/u1f992/pdfdiff/issues"
   },
