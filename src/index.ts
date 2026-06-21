@@ -16,14 +16,15 @@
  */
 
 import * as jimp from "jimp";
-import * as mupdf from "mupdf";
 import Worker from "web-worker";
 
 import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
+import { countPages, renderPagePng } from "./pdf.ts";
 import { perf } from "./perf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
+import { sliceBackingBuffer } from "./transferable.ts";
 import { VERSION } from "./version.ts";
 import type { JimpInstance } from "./jimp.ts";
 import type {
@@ -67,22 +68,6 @@ export const defaultOptions: Options = {
   },
   workers: 1,
 };
-
-function asSharedBytes(bytes: Uint8Array): Uint8Array {
-  const isNode =
-    typeof globalThis.process !== "undefined" &&
-    !!globalThis.process.versions?.node;
-  const coiOk =
-    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated ===
-    true;
-  if (typeof SharedArrayBuffer !== "undefined" && (isNode || coiOk)) {
-    const sab = new SharedArrayBuffer(bytes.byteLength);
-    const view = new Uint8Array(sab);
-    view.set(bytes);
-    return view;
-  }
-  return new Uint8Array(bytes);
-}
 
 type WorkerResponse =
   | LoadedMessage
@@ -136,12 +121,29 @@ class WorkerHandle {
     });
   }
 
-  processPage(index: number): Promise<PageResultMessage> {
+  processDiff(
+    index: number,
+    a: Uint8Array<ArrayBuffer> | null,
+    b: Uint8Array<ArrayBuffer> | null,
+    mask: Uint8Array<ArrayBuffer> | null,
+  ): Promise<PageResultMessage> {
     return new Promise<PageResultMessage>((resolve, reject) => {
       this.pendingResolve = resolve as (data: WorkerResponse) => void;
       this.pendingReject = reject;
-      const msg: PageMessage = { type: "page", index };
-      this.worker.postMessage(msg);
+      const aBuf = a !== null ? sliceBackingBuffer(a) : null;
+      const bBuf = b !== null ? sliceBackingBuffer(b) : null;
+      const maskBuf = mask !== null ? sliceBackingBuffer(mask) : null;
+      const msg: PageMessage = {
+        type: "page",
+        index,
+        a: aBuf,
+        b: bBuf,
+        mask: maskBuf,
+      };
+      const transfer = [aBuf, bBuf, maskBuf].filter(
+        (buf): buf is ArrayBuffer => buf !== null,
+      );
+      this.worker.postMessage(msg, transfer);
     });
   }
 
@@ -211,35 +213,21 @@ export async function* visualizeDifferences(
     workers: options?.workers ?? defaultOptions.workers,
   };
 
-  const probe = mupdf.PDFDocument.openDocument(a, "application/pdf");
-  const probeB = mupdf.PDFDocument.openDocument(b, "application/pdf");
-  const probeMask =
+  const [aPages, bPages, maskPages] = await Promise.all([
+    countPages(a),
+    countPages(b),
     typeof merged.mask !== "undefined"
-      ? mupdf.PDFDocument.openDocument(merged.mask, "application/pdf")
-      : new mupdf.PDFDocument();
-  const maxPages = Math.max(
-    probe.countPages(),
-    probeB.countPages(),
-    probeMask.countPages(),
-  );
-  probe.destroy();
-  probeB.destroy();
-  probeMask.destroy();
+      ? countPages(merged.mask)
+      : Promise.resolve(0),
+  ]);
+  const maxPages = Math.max(aPages, bPages, maskPages);
 
   if (maxPages === 0) return;
 
-  const aBytes = asSharedBytes(a);
-  const bBytes = asSharedBytes(b);
-  const maskBytes =
-    typeof merged.mask !== "undefined" ? asSharedBytes(merged.mask) : null;
+  const mask = merged.mask;
 
   const initMsg: InitMessage = {
     type: "init",
-    aBytes,
-    bBytes,
-    maskBytes,
-    dpi: merged.dpi,
-    alpha: merged.alpha,
     pallet: merged.pallet,
     align: merged.align,
   };
@@ -266,7 +254,20 @@ export async function* visualizeDifferences(
     while (nextToAssign < maxPages && workerError === null) {
       const idx = nextToAssign++;
       try {
-        const msg = await w.processPage(idx);
+        const sRender = perf.span("main.renderTriple_ms");
+        const [aPng, bPng, maskPng] = await Promise.all([
+          idx < aPages
+            ? renderPagePng(a, idx, merged.dpi, merged.alpha)
+            : Promise.resolve(null),
+          idx < bPages
+            ? renderPagePng(b, idx, merged.dpi, merged.alpha)
+            : Promise.resolve(null),
+          typeof mask !== "undefined" && idx < maskPages
+            ? renderPagePng(mask, idx, merged.dpi, merged.alpha)
+            : Promise.resolve(null),
+        ]);
+        sRender.stop();
+        const msg = await w.processDiff(idx, aPng, bPng, maskPng);
         const result = pageResultToResult(msg);
         const resolve = resolvers.get(idx);
         if (resolve) {
