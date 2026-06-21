@@ -21,7 +21,7 @@ import Worker from "web-worker";
 import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
-import { countPages, renderPagePng } from "./pdf.ts";
+import { countPages, renderPageRangePng } from "./pdf.ts";
 import { perf } from "./perf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
@@ -225,6 +225,8 @@ export async function* visualizeDifferences(
   if (maxPages === 0) return;
 
   const mask = merged.mask;
+  const hasMask = typeof mask !== "undefined" && maskPages > 0;
+  const numDocs = hasMask ? 3 : 2;
 
   const initMsg: InitMessage = {
     type: "init",
@@ -234,39 +236,120 @@ export async function* visualizeDifferences(
 
   const N = Math.max(1, Math.min(merged.workers, maxPages));
   const url = workerUrl();
-  const worker0 = new WorkerHandle(url);
-  await worker0.init(initMsg);
-
-  const buffered = new Map<number, Result>();
-  let nextToAssign = 0;
-
-  const workers: WorkerHandle[] = [worker0];
-  for (let i = 1; i < N; i++) {
+  const workers: WorkerHandle[] = [];
+  for (let i = 0; i < N; i++) {
     const w = new WorkerHandle(url);
     await w.init(initMsg);
     workers.push(w);
   }
 
+  let aborted: unknown = null;
+
+  // One PNG slot per page per document, fulfilled as render chunks complete.
+  // Pages past a document's page count resolve to null (an empty/transparent
+  // page). The defensive catch keeps a chunk failure from surfacing as an
+  // unhandled rejection before a diff lane awaits the slot.
+  type Slot = {
+    p: Promise<Uint8Array<ArrayBuffer> | null>;
+    resolve: (v: Uint8Array<ArrayBuffer> | null) => void;
+    reject: (e: unknown) => void;
+  };
+  const makeSlots = (count: number): Slot[] =>
+    Array.from({ length: maxPages }, (_, i) => {
+      if (i >= count) {
+        return { p: Promise.resolve(null), resolve: () => {}, reject: () => {} };
+      }
+      let resolve!: (v: Uint8Array<ArrayBuffer> | null) => void;
+      let reject!: (e: unknown) => void;
+      const p = new Promise<Uint8Array<ArrayBuffer> | null>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      p.catch(() => {});
+      return { p, resolve, reject };
+    });
+  const slots = {
+    a: makeSlots(aPages),
+    b: makeSlots(bPages),
+    mask: makeSlots(hasMask ? maskPages : 0),
+  };
+
+  // Render chunk tasks: batch several pages per gs() call to amortize startup,
+  // interleaving A/B/mask by page range so the early pages of every document
+  // become available together (which keeps the diff stage fed).
+  // Render concurrency. Aim for ~2x as many chunks as render slots so pages
+  // arrive in waves and the diff/decode stage overlaps later renders instead of
+  // waiting for one big batch. A floor keeps each chunk large enough to amortize
+  // Ghostscript's per-call startup: when there are many slots relative to pages,
+  // the slots are already saturated, so batching beats finer streaming.
+  const MIN_CHUNK = 4;
+  const R = Math.max(merged.workers, numDocs);
+  const totalRenderPages = aPages + bPages + (hasMask ? maskPages : 0);
+  const chunkSize = Math.max(
+    1,
+    Math.min(maxPages, Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R)))),
+  );
+  type Task = { bytes: Uint8Array; start: number; end: number; slots: Slot[] };
+  const tasks: Task[] = [];
+  const pushChunk = (
+    bytes: Uint8Array | undefined,
+    count: number,
+    target: Slot[],
+    start: number,
+  ) => {
+    if (bytes === undefined || start >= count) return;
+    tasks.push({
+      bytes,
+      start,
+      end: Math.min(start + chunkSize, count) - 1,
+      slots: target,
+    });
+  };
+  for (let start = 0; start < maxPages; start += chunkSize) {
+    pushChunk(a, aPages, slots.a, start);
+    pushChunk(b, bPages, slots.b, start);
+    if (hasMask) pushChunk(mask, maskPages, slots.mask, start);
+  }
+
+  let taskIdx = 0;
+  const renderLoops = Array.from(
+    { length: Math.min(R, tasks.length) },
+    async () => {
+      while (taskIdx < tasks.length && aborted === null) {
+        const t = tasks[taskIdx++]!;
+        try {
+          const pngs = await renderPageRangePng(
+            t.bytes,
+            t.start,
+            t.end,
+            merged.dpi,
+            merged.alpha,
+          );
+          for (let i = t.start; i <= t.end; i++) {
+            t.slots[i]!.resolve(pngs.get(i) ?? null);
+          }
+        } catch (e) {
+          aborted = e;
+          for (let i = t.start; i <= t.end; i++) t.slots[i]!.reject(e);
+        }
+      }
+    },
+  );
+
+  const buffered = new Map<number, Result>();
+  let nextToAssign = 0;
   const resolvers = new Map<number, (r: Result) => void>();
   let workerError: unknown = null;
 
-  const loops = workers.map(async (w) => {
+  const diffLoops = workers.map(async (w) => {
     while (nextToAssign < maxPages && workerError === null) {
       const idx = nextToAssign++;
       try {
-        const sRender = perf.span("main.renderTriple_ms");
         const [aPng, bPng, maskPng] = await Promise.all([
-          idx < aPages
-            ? renderPagePng(a, idx, merged.dpi, merged.alpha)
-            : Promise.resolve(null),
-          idx < bPages
-            ? renderPagePng(b, idx, merged.dpi, merged.alpha)
-            : Promise.resolve(null),
-          typeof mask !== "undefined" && idx < maskPages
-            ? renderPagePng(mask, idx, merged.dpi, merged.alpha)
-            : Promise.resolve(null),
+          slots.a[idx]!.p,
+          slots.b[idx]!.p,
+          slots.mask[idx]!.p,
         ]);
-        sRender.stop();
         const msg = await w.processDiff(idx, aPng, bPng, maskPng);
         const result = pageResultToResult(msg);
         const resolve = resolvers.get(idx);
@@ -279,6 +362,7 @@ export async function* visualizeDifferences(
         }
       } catch (e) {
         workerError = e;
+        aborted = e;
         for (const [, resolve] of resolvers) resolve(null as never);
         resolvers.clear();
         return;
@@ -304,8 +388,11 @@ export async function* visualizeDifferences(
       yield r;
       sYield.stop();
     }
-    await Promise.all(loops);
+    await Promise.all(diffLoops);
+    await Promise.all(renderLoops);
   } finally {
+    aborted = aborted ?? new Error("aborted");
+    await Promise.allSettled(renderLoops);
     for (const w of workers) w.terminate();
   }
 }

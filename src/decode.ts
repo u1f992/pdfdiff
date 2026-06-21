@@ -20,7 +20,8 @@ import * as jimp from "jimp";
 import type { JimpInstance } from "./jimp.ts";
 
 /**
- * Decode PNG bytes (as produced by {@link renderPagePng}) into an RGBA image.
+ * Decode PNG bytes (as produced by {@link renderPageRangePng}) into an RGBA
+ * image.
  * `jimp.fromBuffer` accepts an ArrayBuffer directly, which keeps this usable in
  * the browser without relying on Node's `Buffer`.
  */
