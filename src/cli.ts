@@ -243,11 +243,7 @@ for await (const [
   console.log(
     `Page ${i}, Addition: ${addition.length}, Deletion: ${deletion.length}, Modification: ${modification.length}`,
   );
-  if (
-    addition.length > 0 ||
-    deletion.length > 0 ||
-    modification.length > 0
-  ) {
+  if (addition.length > 0 || deletion.length > 0 || modification.length > 0) {
     hasDiff = true;
   }
   const dir = path.join(outDir, i.toString(10));

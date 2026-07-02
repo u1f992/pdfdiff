@@ -95,7 +95,9 @@ export async function renderPageRangePng(
   });
   sRender.stop();
   if (exitCode !== 0) {
-    throw new Error(`gs render failed (pages ${first}-${last}, exit ${exitCode})`);
+    throw new Error(
+      `gs render failed (pages ${first}-${last}, exit ${exitCode})`,
+    );
   }
   const result = new Map<number, Uint8Array<ArrayBuffer>>();
   for (let k = 1; k <= pageCount; k++) {

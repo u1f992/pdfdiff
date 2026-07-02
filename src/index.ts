@@ -249,7 +249,11 @@ export async function* visualizeDifferences(
   const makeSlots = (count: number): Slot[] =>
     Array.from({ length: maxPages }, (_, i) => {
       if (i >= count) {
-        return { p: Promise.resolve(null), resolve: () => {}, reject: () => {} };
+        return {
+          p: Promise.resolve(null),
+          resolve: () => {},
+          reject: () => {},
+        };
       }
       let resolve!: (v: Uint8Array<ArrayBuffer> | null) => void;
       let reject!: (e: unknown) => void;
@@ -279,7 +283,10 @@ export async function* visualizeDifferences(
   const totalRenderPages = aPages + bPages + (hasMask ? maskPages : 0);
   const chunkSize = Math.max(
     1,
-    Math.min(maxPages, Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R)))),
+    Math.min(
+      maxPages,
+      Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R))),
+    ),
   );
   type Task = { bytes: Uint8Array; start: number; end: number; slots: Slot[] };
   const tasks: Task[] = [];

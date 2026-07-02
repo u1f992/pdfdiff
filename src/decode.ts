@@ -8,8 +8,6 @@ import type { JimpInstance } from "./jimp.ts";
  * `jimp.fromBuffer` accepts an ArrayBuffer directly, which keeps this usable in
  * the browser without relying on Node's `Buffer`.
  */
-export async function decodePng(
-  png: ArrayBuffer,
-): Promise<JimpInstance> {
+export async function decodePng(png: ArrayBuffer): Promise<JimpInstance> {
   return (await jimp.Jimp.fromBuffer(png)) as JimpInstance;
 }
