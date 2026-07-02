@@ -46,5 +46,8 @@
     "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true,
     "noEmit": true
-  }
+  },
+  // Keep `tsc --noEmit` runnable as a type check: scripts/version.ts is run
+  // directly by node (type stripping) and lives outside rootDir.
+  "include": ["src"]
 }
