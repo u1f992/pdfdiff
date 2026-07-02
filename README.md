@@ -19,6 +19,13 @@ OPTIONS:
     --addition-color <#HEX>        default: #4cae4fff
     --deletion-color <#HEX>        default: #ff5724ff
     --modification-color <#HEX>    default: #ffc105ff
+    --workers <N>                  default: min(CPU cores, 4)
+    --exit-code                    exit 1 if differences are found
     -v, --version
     -h, --help
+
+EXIT STATUS:
+    0    success (with --exit-code: no differences found)
+    1    differences found (only with --exit-code)
+    2    error
 ```

@@ -70,6 +70,17 @@ class PngWriterPool {
   }
 }
 
+// Errors always exit 2, following diff(1)'s 0/1/2 convention, so that with
+// --exit-code a caller can tell "differences found" (1) from a failed run.
+process.on("uncaughtException", (err) => {
+  console.error(err);
+  process.exit(2);
+});
+process.on("unhandledRejection", (err) => {
+  console.error(err);
+  process.exit(2);
+});
+
 const _wallSpan = perf.span("cli.wallTotal_ms");
 
 const {
@@ -83,6 +94,7 @@ const {
     "deletion-color": deletionColorHex,
     "modification-color": modificationColorHex,
     workers: workers_,
+    "exit-code": exitCode_,
     version,
     help,
   },
@@ -97,6 +109,7 @@ const {
     "deletion-color": { type: "string" },
     "modification-color": { type: "string" },
     workers: { type: "string" },
+    "exit-code": { type: "boolean" },
     version: { type: "boolean", short: "v" },
     help: { type: "boolean", short: "h" },
   },
@@ -117,8 +130,14 @@ OPTIONS:
     --deletion-color <#HEX>        default: ${formatHex(defaultOptions.pallet.deletion)}
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
     --workers <N>                  default: ${defaultOptions.workers}
+    --exit-code                    exit 1 if differences are found
     -v, --version
     -h, --help
+
+EXIT STATUS:
+    0    success (with --exit-code: no differences found)
+    1    differences found (only with --exit-code)
+    2    error
 
 NOTES:
     Pages are rendered with Ghostscript (gs-wasm). Each page render spins up a
@@ -192,12 +211,15 @@ if (Number.isNaN(workers) || workers < 1) {
   throw new Error("Invalid workers value");
 }
 
+const exitCodeOnDiff = exitCode_ ?? false;
+
 fs.mkdirSync(outDir, { recursive: true });
 const writerPool = new PngWriterPool(
   workers,
   new URL("./cli-png-worker.js", import.meta.url),
 );
 const pendingWrites: Promise<void>[] = [];
+let hasDiff = false;
 
 const _loopSpan = perf.span("cli.loopWall_ms");
 for await (const [
@@ -221,6 +243,13 @@ for await (const [
   console.log(
     `Page ${i}, Addition: ${addition.length}, Deletion: ${deletion.length}, Modification: ${modification.length}`,
   );
+  if (
+    addition.length > 0 ||
+    deletion.length > 0 ||
+    modification.length > 0
+  ) {
+    hasDiff = true;
+  }
   const dir = path.join(outDir, i.toString(10));
   fs.mkdirSync(dir, { recursive: true });
   const sSubmit = perf.span("cli.poolSubmit_ms");
@@ -255,6 +284,10 @@ sDrain.stop();
 await writerPool.terminate();
 _loopSpan.stop();
 _wallSpan.stop();
+
+if (exitCodeOnDiff && hasDiff) {
+  process.exitCode = 1;
+}
 
 if (perf.enabled) {
   const counters = perf.dump();
