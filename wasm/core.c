@@ -2,9 +2,12 @@
 
 #include <math.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define COORD_INITIAL_CAPACITY 256
+
+/* Zero constant for CoreResult; assigning it replaces struct-zeroing memset,
+   which clang-tidy's insecureAPI check rejects. */
+static const CoreResult CORE_RESULT_ZERO = {0};
 
 typedef struct {
   int32_t *data;
@@ -76,7 +79,7 @@ void core_result_free(CoreResult *r) {
   free(r->addition_xy);
   free(r->deletion_xy);
   free(r->modification_xy);
-  memset(r, 0, sizeof(*r));
+  *r = CORE_RESULT_ZERO;
 }
 
 int32_t process_page(const uint8_t *a_pixels, const uint8_t *b_pixels,
@@ -89,7 +92,7 @@ int32_t process_page(const uint8_t *a_pixels, const uint8_t *b_pixels,
     return CORE_ERROR_INVALID;
   }
 
-  memset(out, 0, sizeof(*out));
+  *out = CORE_RESULT_ZERO;
 
   size_t pixel_count = (size_t)width * (size_t)height;
   size_t byte_count = pixel_count * 4;
