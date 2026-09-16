@@ -21,6 +21,7 @@ OPTIONS:
     --modification-color <#HEX>    default: #ffc105ff
     --workers <N>                  default: min(CPU cores, 4)
     --exit-code                    exit 1 if differences are found
+    --diff-only                    output directories only for pages with differences
     -v, --version
     -h, --help
 

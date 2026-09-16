@@ -95,6 +95,7 @@ const {
     "modification-color": modificationColorHex,
     workers: workers_,
     "exit-code": exitCode_,
+    "diff-only": diffOnly_,
     version,
     help,
   },
@@ -110,6 +111,7 @@ const {
     "modification-color": { type: "string" },
     workers: { type: "string" },
     "exit-code": { type: "boolean" },
+    "diff-only": { type: "boolean" },
     version: { type: "boolean", short: "v" },
     help: { type: "boolean", short: "h" },
   },
@@ -131,6 +133,7 @@ OPTIONS:
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
     --workers <N>                  default: ${defaultOptions.workers}
     --exit-code                    exit 1 if differences are found
+    --diff-only                    output directories only for pages with differences
     -v, --version
     -h, --help
 
@@ -212,6 +215,7 @@ if (Number.isNaN(workers) || workers < 1) {
 }
 
 const exitCodeOnDiff = exitCode_ ?? false;
+const diffOnly = diffOnly_ ?? false;
 
 fs.mkdirSync(outDir, { recursive: true });
 const writerPool = new PngWriterPool(
@@ -243,8 +247,13 @@ for await (const [
   console.log(
     `Page ${i}, Addition: ${addition.length}, Deletion: ${deletion.length}, Modification: ${modification.length}`,
   );
-  if (addition.length > 0 || deletion.length > 0 || modification.length > 0) {
+  const pageHasDiff =
+    addition.length > 0 || deletion.length > 0 || modification.length > 0;
+  if (pageHasDiff) {
     hasDiff = true;
+  }
+  if (diffOnly && !pageHasDiff) {
+    continue;
   }
   const dir = path.join(outDir, i.toString(10));
   fs.mkdirSync(dir, { recursive: true });
