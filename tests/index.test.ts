@@ -13,17 +13,16 @@ import {
 } from "../src/index.ts";
 
 const fixtures = new URL("./fixtures/", import.meta.url);
-const readFixture = (name: string) =>
-  new Uint8Array(fs.readFileSync(new URL(name, fixtures)));
+const readFixture = (name: string) => new Uint8Array(fs.readFileSync(new URL(name, fixtures)));
 
-test("re-exports are exposed as runtime values", () => {
+void test("re-exports are exposed as runtime values", () => {
   assert.equal(typeof withIndex, "function");
   assert.equal(typeof isValidAlignStrategy, "function");
   assert.equal(typeof parseHex, "function");
   assert.equal(typeof formatHex, "function");
 });
 
-test("defaultOptions", () => {
+void test("defaultOptions", () => {
   assert.deepEqual(defaultOptions, {
     dpi: 150,
     alpha: true,
@@ -38,7 +37,7 @@ test("defaultOptions", () => {
   });
 });
 
-test("defaultWorkers scales with cores, capped at 4", () => {
+void test("defaultWorkers scales with cores, capped at 4", () => {
   assert.equal(
     defaultWorkers,
     Math.max(1, Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 4)),
@@ -46,7 +45,7 @@ test("defaultWorkers scales with cores, capped at 4", () => {
   assert.ok(defaultWorkers >= 1 && defaultWorkers <= 4);
 });
 
-test("isValidAlignStrategy", async (ctx) => {
+void test("isValidAlignStrategy", async (ctx) => {
   for (const s of [
     "resize",
     "top-left",
@@ -68,13 +67,12 @@ test("isValidAlignStrategy", async (ctx) => {
   });
 });
 
-test("visualizeDifferences pins counts for fixtures at dpi 300", async () => {
+void test("visualizeDifferences pins counts for fixtures at dpi 300", async () => {
   const a = readFixture("a.pdf");
   const b = readFixture("b.pdf");
   const mask = readFixture("mask.pdf");
 
-  const pages: { addition: number; deletion: number; modification: number }[] =
-    [];
+  const pages: { addition: number; deletion: number; modification: number }[] = [];
   for await (const page of visualizeDifferences(a, b, { dpi: 300, mask })) {
     pages.push({
       addition: page.addition.length,
@@ -83,7 +81,5 @@ test("visualizeDifferences pins counts for fixtures at dpi 300", async () => {
     });
   }
 
-  assert.deepEqual(pages, [
-    { addition: 7500, deletion: 7500, modification: 7500 },
-  ]);
+  assert.deepEqual(pages, [{ addition: 7500, deletion: 7500, modification: 7500 }]);
 });

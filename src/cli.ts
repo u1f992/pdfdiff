@@ -124,7 +124,7 @@ if (help) {
 OPTIONS:
     --dpi <DPI>                    default: ${defaultOptions.dpi}
     --alpha                        default: ${defaultOptions.alpha}
-    --mask <PATH>                  default: ${defaultOptions.mask}
+    --mask <PATH>                  default: ${String(defaultOptions.mask)}
     --align <resize | top-left | top-center | top-right
              | middle-left | middle-center | middle-right
              | bottom-left | bottom-center | bottom-right>    default: ${defaultOptions.align}
@@ -168,18 +168,14 @@ const pdfA = fs.readFileSync(path.resolve(positionals[0]!));
 const pdfB = fs.readFileSync(path.resolve(positionals[1]!));
 const outDir = path.resolve(positionals[2]!);
 
-const dpi =
-  typeof dpi_ !== "undefined" ? parseInt(dpi_, 10) : defaultOptions.dpi;
+const dpi = typeof dpi_ !== "undefined" ? parseInt(dpi_, 10) : defaultOptions.dpi;
 if (Number.isNaN(dpi)) {
   throw new Error("Invalid DPI value");
 }
 
 const alpha = alpha_ ?? defaultOptions.alpha;
 
-const pdfMask =
-  typeof mask_ !== "undefined"
-    ? fs.readFileSync(path.resolve(mask_))
-    : undefined;
+const pdfMask = typeof mask_ !== "undefined" ? fs.readFileSync(path.resolve(mask_)) : undefined;
 
 const align = align_ ?? defaultOptions.align;
 if (!isValidAlignStrategy(align)) {
@@ -198,18 +194,11 @@ const modificationColor =
   typeof modificationColorHex !== "undefined"
     ? parseHex(modificationColorHex)
     : defaultOptions.pallet.modification;
-if (
-  additionColor === null ||
-  deletionColor === null ||
-  modificationColor === null
-) {
+if (additionColor === null || deletionColor === null || modificationColor === null) {
   throw new Error("Invalid color format");
 }
 
-const workers =
-  typeof workers_ !== "undefined"
-    ? parseInt(workers_, 10)
-    : defaultOptions.workers;
+const workers = typeof workers_ !== "undefined" ? parseInt(workers_, 10) : defaultOptions.workers;
 if (Number.isNaN(workers) || workers < 1) {
   throw new Error("Invalid workers value");
 }
@@ -218,18 +207,12 @@ const exitCodeOnDiff = exitCode_ ?? false;
 const diffOnly = diffOnly_ ?? false;
 
 fs.mkdirSync(outDir, { recursive: true });
-const writerPool = new PngWriterPool(
-  workers,
-  new URL("./cli-png-worker.js", import.meta.url),
-);
+const writerPool = new PngWriterPool(workers, new URL("./cli-png-worker.js", import.meta.url));
 const pendingWrites: Promise<void>[] = [];
 let hasDiff = false;
 
 const _loopSpan = perf.span("cli.loopWall_ms");
-for await (const [
-  i,
-  { a, b, diff, addition, deletion, modification },
-] of withIndex(
+for await (const [i, { a, b, diff, addition, deletion, modification }] of withIndex(
   visualizeDifferences(pdfA, pdfB, {
     dpi,
     alpha,
@@ -247,8 +230,7 @@ for await (const [
   console.log(
     `Page ${i}, Addition: ${addition.length}, Deletion: ${deletion.length}, Modification: ${modification.length}`,
   );
-  const pageHasDiff =
-    addition.length > 0 || deletion.length > 0 || modification.length > 0;
+  const pageHasDiff = addition.length > 0 || deletion.length > 0 || modification.length > 0;
   if (pageHasDiff) {
     hasDiff = true;
   }

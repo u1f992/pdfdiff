@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { parseHex, formatHex } from "../src/rgba-color.ts";
 
-test("parseHex", async (ctx) => {
+void test("parseHex", async (ctx) => {
   await ctx.test("#rgb", () => {
     assert.deepStrictEqual(parseHex("#fed"), [0xff, 0xee, 0xdd, 0xff]);
   });
@@ -21,6 +21,6 @@ test("parseHex", async (ctx) => {
   });
 });
 
-test("formatHex", () => {
+void test("formatHex", () => {
   assert.deepStrictEqual(formatHex([0xff, 0xfe, 0xfd, 0xfc]), "#fffefdfc");
 });

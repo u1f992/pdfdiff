@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "lint": "oxlint --fix --config ../../oxlint.config.ts src rollup.config.js",
+    "format": "oxfmt --config ../../oxfmt.config.ts src rollup.config.js",
     "build": "rm -rf build dist && tsc -p . && rollup -c",
     "serve": "npm run build && http-server dist"
   },

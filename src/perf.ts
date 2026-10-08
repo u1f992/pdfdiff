@@ -1,10 +1,6 @@
 const _enabled = (() => {
   try {
-    if (
-      typeof process !== "undefined" &&
-      process.env &&
-      process.env.PDFDIFF_PROFILE === "1"
-    ) {
+    if (typeof process !== "undefined" && process.env && process.env.PDFDIFF_PROFILE === "1") {
       return true;
     }
   } catch {

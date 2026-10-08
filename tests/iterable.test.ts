@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { withIndex } from "../src/iterable.ts";
 
-test("withIndex", async () => {
+void test("withIndex", async () => {
   assert.deepStrictEqual(
     // @ts-ignore
     await Array.fromAsync(

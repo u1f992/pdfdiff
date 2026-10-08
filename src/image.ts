@@ -11,8 +11,7 @@ export function createEmptyImage(width: number, height: number) {
 }
 
 export function fillWithEmpty(
-  images:
-    [JimpInstance, JimpInstance] | [JimpInstance, null] | [null, JimpInstance],
+  images: [JimpInstance, JimpInstance] | [JimpInstance, null] | [null, JimpInstance],
 ): [JimpInstance, JimpInstance];
 export function fillWithEmpty(
   images:
@@ -78,10 +77,7 @@ export function alignSize(
   images: [JimpInstance, JimpInstance, JimpInstance],
   align: AlignStrategy,
 ): [JimpInstance, JimpInstance, JimpInstance];
-export function alignSize(
-  images: JimpInstance[],
-  align: AlignStrategy,
-): JimpInstance[] {
+export function alignSize(images: JimpInstance[], align: AlignStrategy): JimpInstance[] {
   if (images.length === 0) {
     return [];
   }
@@ -119,12 +115,8 @@ export function composeLayers(
         const sw = sa / oa;
         const dw = (da * (1 - sa)) / oa;
         dData[dIdx] = Math.round(sData[sIdx]! * sw + dData[dIdx]! * dw);
-        dData[dIdx + 1] = Math.round(
-          sData[sIdx + 1]! * sw + dData[dIdx + 1]! * dw,
-        );
-        dData[dIdx + 2] = Math.round(
-          sData[sIdx + 2]! * sw + dData[dIdx + 2]! * dw,
-        );
+        dData[dIdx + 1] = Math.round(sData[sIdx + 1]! * sw + dData[dIdx + 1]! * dw);
+        dData[dIdx + 2] = Math.round(sData[sIdx + 2]! * sw + dData[dIdx + 2]! * dw);
         dData[dIdx + 3] = Math.round(oa * 255);
       }
     }

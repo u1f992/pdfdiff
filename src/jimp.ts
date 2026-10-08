@@ -25,9 +25,7 @@ export type JimpInstance = Pick<
     height: number;
   };
   resize: (options: Parameters<jimp.JimpInstance["resize"]>[0]) => JimpInstance;
-  composite: (
-    ...args: Parameters<jimp.JimpInstance["composite"]>
-  ) => JimpInstance;
+  composite: (...args: Parameters<jimp.JimpInstance["composite"]>) => JimpInstance;
   getBuffer: (mime: "image/png") => ReturnType<jimp.JimpInstance["getBuffer"]>;
   getBase64: (mime: "image/png") => ReturnType<jimp.JimpInstance["getBase64"]>;
 };

@@ -61,8 +61,7 @@ export const defaultOptions: Options = {
   workers: defaultWorkers,
 };
 
-type WorkerResponse =
-  LoadedMessage | ReadyMessage | PageResultMessage | ErrorMessage;
+type WorkerResponse = LoadedMessage | ReadyMessage | PageResultMessage | ErrorMessage;
 
 class WorkerHandle {
   worker: InstanceType<typeof Worker>;
@@ -129,9 +128,7 @@ class WorkerHandle {
         b: bBuf,
         mask: maskBuf,
       };
-      const transfer = [aBuf, bBuf, maskBuf].filter(
-        (buf): buf is ArrayBuffer => buf !== null,
-      );
+      const transfer = [aBuf, bBuf, maskBuf].filter((buf): buf is ArrayBuffer => buf !== null);
       this.worker.postMessage(msg, transfer);
     });
   }
@@ -148,9 +145,9 @@ function workerUrl(): URL {
 
 function unpackCoords(buf: ArrayBuffer): [number, number][] {
   const arr = new Int32Array(buf);
-  const out: [number, number][] = new Array(arr.length >>> 1);
-  for (let i = 0, j = 0; j < out.length; i += 2, j++) {
-    out[j] = [arr[i]!, arr[i + 1]!];
+  const out: [number, number][] = [];
+  for (let i = 0; i + 1 < arr.length; i += 2) {
+    out.push([arr[i]!, arr[i + 1]!]);
   }
   return out;
 }
@@ -196,8 +193,7 @@ export async function* visualizeDifferences(
     pallet: {
       addition: options?.pallet?.addition ?? defaultOptions.pallet.addition,
       deletion: options?.pallet?.deletion ?? defaultOptions.pallet.deletion,
-      modification:
-        options?.pallet?.modification ?? defaultOptions.pallet.modification,
+      modification: options?.pallet?.modification ?? defaultOptions.pallet.modification,
     },
     workers: options?.workers ?? defaultOptions.workers,
   };
@@ -205,9 +201,7 @@ export async function* visualizeDifferences(
   const [aPages, bPages, maskPages] = await Promise.all([
     countPages(a),
     countPages(b),
-    typeof merged.mask !== "undefined"
-      ? countPages(merged.mask)
-      : Promise.resolve(0),
+    typeof merged.mask !== "undefined" ? countPages(merged.mask) : Promise.resolve(0),
   ]);
   const maxPages = Math.max(aPages, bPages, maskPages);
 
@@ -280,10 +274,7 @@ export async function* visualizeDifferences(
   const totalRenderPages = aPages + bPages + (hasMask ? maskPages : 0);
   const chunkSize = Math.max(
     1,
-    Math.min(
-      maxPages,
-      Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R))),
-    ),
+    Math.min(maxPages, Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R)))),
   );
   type Task = { bytes: Uint8Array; start: number; end: number; slots: Slot[] };
   const tasks: Task[] = [];
@@ -308,29 +299,20 @@ export async function* visualizeDifferences(
   }
 
   let taskIdx = 0;
-  const renderLoops = Array.from(
-    { length: Math.min(R, tasks.length) },
-    async () => {
-      while (taskIdx < tasks.length && aborted === null) {
-        const t = tasks[taskIdx++]!;
-        try {
-          const pngs = await renderPageRangePng(
-            t.bytes,
-            t.start,
-            t.end,
-            merged.dpi,
-            merged.alpha,
-          );
-          for (let i = t.start; i <= t.end; i++) {
-            t.slots[i]!.resolve(pngs.get(i) ?? null);
-          }
-        } catch (e) {
-          aborted = e;
-          for (let i = t.start; i <= t.end; i++) t.slots[i]!.reject(e);
+  const renderLoops = Array.from({ length: Math.min(R, tasks.length) }, async () => {
+    while (taskIdx < tasks.length && aborted === null) {
+      const t = tasks[taskIdx++]!;
+      try {
+        const pngs = await renderPageRangePng(t.bytes, t.start, t.end, merged.dpi, merged.alpha);
+        for (let i = t.start; i <= t.end; i++) {
+          t.slots[i]!.resolve(pngs.get(i) ?? null);
         }
+      } catch (e) {
+        aborted = e;
+        for (let i = t.start; i <= t.end; i++) t.slots[i]!.reject(e);
       }
-    },
-  );
+    }
+  });
 
   const buffered = new Map<number, Result>();
   let nextToAssign = 0;

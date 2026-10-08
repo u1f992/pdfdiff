@@ -13,9 +13,7 @@ export type EncodeJob = {
 
 export type EncodeReply = { ok: true } | { ok: false; error: string };
 
-const wasmPath = fileURLToPath(
-  import.meta.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
-);
+const wasmPath = fileURLToPath(import.meta.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"));
 await init(fs.readFileSync(wasmPath));
 
 if (!parentPort) {
@@ -26,9 +24,7 @@ const port = parentPort;
 
 port.on("message", async (job: EncodeJob) => {
   try {
-    const png = await encode(
-      new ImageData(new Uint8ClampedArray(job.data), job.width, job.height),
-    );
+    const png = await encode(new ImageData(new Uint8ClampedArray(job.data), job.width, job.height));
     fs.writeFileSync(job.path, new Uint8Array(png));
     const reply: EncodeReply = { ok: true };
     port.postMessage(reply);

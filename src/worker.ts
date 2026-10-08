@@ -85,10 +85,7 @@ async function processPage(msg: PageMessage): Promise<PageResultMessage> {
   let bAligned: JimpInstance;
   let maskAligned: JimpInstance | null;
   if (pageMaskOrNull !== null) {
-    [aAligned, bAligned, maskAligned] = alignSize(
-      [pageA, pageB, pageMaskOrNull],
-      opts.align,
-    );
+    [aAligned, bAligned, maskAligned] = alignSize([pageA, pageB, pageMaskOrNull], opts.align);
   } else {
     [aAligned, bAligned] = alignSize([pageA, pageB], opts.align);
     maskAligned = null;
@@ -147,40 +144,36 @@ async function processPage(msg: PageMessage): Promise<PageResultMessage> {
   };
 }
 
-self.addEventListener(
-  "message",
-  async (e: MessageEvent<InitMessage | PageMessage>) => {
-    try {
-      const msg = e.data;
-      if (msg.type === "init") {
-        opts = {
-          pallet: msg.pallet,
-          align: msg.align,
-        };
-        await getWasm();
-        const ready: ReadyMessage = { type: "ready" };
-        self.postMessage(ready);
-      } else if (msg.type === "page") {
-        const result = await processPage(msg);
-        self.postMessage(result, [
-          result.a.data,
-          result.b.data,
-          result.diff.data,
-          result.addition,
-          result.deletion,
-          result.modification,
-        ]);
-      }
-    } catch (err) {
-      const errorMsg: ErrorMessage = {
-        type: "error",
-        message:
-          err instanceof Error ? `${err.message}\n${err.stack}` : String(err),
+self.addEventListener("message", async (e: MessageEvent<InitMessage | PageMessage>) => {
+  try {
+    const msg = e.data;
+    if (msg.type === "init") {
+      opts = {
+        pallet: msg.pallet,
+        align: msg.align,
       };
-      self.postMessage(errorMsg);
+      await getWasm();
+      const ready: ReadyMessage = { type: "ready" };
+      self.postMessage(ready);
+    } else if (msg.type === "page") {
+      const result = await processPage(msg);
+      self.postMessage(result, [
+        result.a.data,
+        result.b.data,
+        result.diff.data,
+        result.addition,
+        result.deletion,
+        result.modification,
+      ]);
     }
-  },
-);
+  } catch (err) {
+    const errorMsg: ErrorMessage = {
+      type: "error",
+      message: err instanceof Error ? `${err.message}\n${err.stack}` : String(err),
+    };
+    self.postMessage(errorMsg);
+  }
+});
 
 const loaded: LoadedMessage = { type: "loaded" };
 self.postMessage(loaded);

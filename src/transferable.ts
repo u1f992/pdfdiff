@@ -8,8 +8,5 @@ export function sliceBackingBuffer<TArrayBuffer extends ArrayBufferLike>(src: {
   byteOffset: number;
   byteLength: number;
 }): TArrayBuffer {
-  return src.buffer.slice(
-    src.byteOffset,
-    src.byteOffset + src.byteLength,
-  ) as TArrayBuffer;
+  return src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) as TArrayBuffer;
 }

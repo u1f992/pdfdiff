@@ -13,6 +13,8 @@
     "packages/*"
   ],
   "scripts": {
+    "lint": "tsc --noEmit --ignoreConfig oxlint.config.ts && oxlint --fix src tests scripts && npm run lint --workspaces --if-present",
+    "format": "tsc --noEmit --ignoreConfig oxfmt.config.ts && oxfmt src tests scripts && npm run format --workspaces --if-present",
     "test": "tsc && node --test \"tests/**/*.test.ts\"",
     "build:version": "node scripts/version.ts",
     "build:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh",
@@ -36,7 +38,9 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^22.20.5",
-    "prettier": "^3.9.9",
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0",
+    "oxlint-tsgolint": "^7.0.2003",
     "typescript": "^7.0.2"
   },
   "dependencies": {
