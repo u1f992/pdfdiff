@@ -13,7 +13,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "node --test",
+    "test": "tsc && node --test \"tests/**/*.test.ts\"",
     "build:version": "node scripts/version.ts",
     "build:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh",
     "format:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh format",

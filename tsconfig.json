@@ -37,7 +37,9 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
+
+    // Interoperability with Node.js Type Stripping
+    "erasableSyntaxOnly": true,
     "rewriteRelativeImportExtensions": true
   },
   "include": ["src", "tests", "scripts"]
