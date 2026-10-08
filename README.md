@@ -20,7 +20,7 @@ OPTIONS:
     --deletion-color <#HEX>        default: #ff5724ff
     --modification-color <#HEX>    default: #ffc105ff
     --workers <N>                  default: min(CPU cores, 4)
-    --out-type <directory | diff-pdf | a-b-diff-pdf>    default: directory
+    --out-type <directory | diff-pdf | a-b-diff-pdf>    default: a-b-diff-pdf
              directory       <OUT>/<page>/{a,b,diff}.png
              diff-pdf        <OUT> is a PDF of the diff images
              a-b-diff-pdf    <OUT> is a PDF of A, B and the diff side by side

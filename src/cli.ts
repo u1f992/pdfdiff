@@ -149,6 +149,7 @@ function pdfOutput(
 const outTypes = ["directory", "diff-pdf", "a-b-diff-pdf"] as const;
 type OutType = (typeof outTypes)[number];
 const isOutType = (str: string): str is OutType => (outTypes as readonly string[]).includes(str);
+const defaultOutType: OutType = "a-b-diff-pdf";
 
 // Errors always exit 2, following diff(1)'s 0/1/2 convention, so that with
 // --exit-code a caller can tell "differences found" (1) from a failed run.
@@ -214,7 +215,7 @@ OPTIONS:
     --deletion-color <#HEX>        default: ${formatHex(defaultOptions.pallet.deletion)}
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
     --workers <N>                  default: ${defaultOptions.workers}
-    --out-type <directory | diff-pdf | a-b-diff-pdf>    default: directory
+    --out-type <directory | diff-pdf | a-b-diff-pdf>    default: ${defaultOutType}
              directory       <OUT>/<page>/{a,b,diff}.png
              diff-pdf        <OUT> is a PDF of the diff images
              a-b-diff-pdf    <OUT> is a PDF of A, B and the diff side by side
@@ -290,7 +291,7 @@ if (Number.isNaN(workers) || workers < 1) {
   throw new Error("Invalid workers value");
 }
 
-const outType = outType_ ?? "directory";
+const outType = outType_ ?? defaultOutType;
 if (!isOutType(outType)) {
   throw new Error("Invalid output type");
 }

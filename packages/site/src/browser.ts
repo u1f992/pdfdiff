@@ -93,7 +93,7 @@ downloadButton?.addEventListener("click", async () => {
   const pages = [...result.pages].filter(([, page]) => !diffOnly || page.hasDiff);
   if (pages.length === 0) return;
 
-  const type = downloadTypeEl?.value ?? "zip";
+  const type = downloadTypeEl?.value ?? "a-b-diff-pdf";
   if (type === "zip") {
     const files: Record<string, Uint8Array> = {};
     for (const [i, page] of pages) {
