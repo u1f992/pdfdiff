@@ -61,7 +61,7 @@ export const defaultWorkers = Math.max(
 );
 
 export const defaultOptions: Options = {
-  dpi: 150,
+  dpi: 72,
   alpha: true,
   mask: undefined,
   align: "resize",

@@ -24,7 +24,7 @@ void test("re-exports are exposed as runtime values", () => {
 
 void test("defaultOptions", () => {
   assert.deepEqual(defaultOptions, {
-    dpi: 150,
+    dpi: 72,
     alpha: true,
     mask: undefined,
     align: "resize",

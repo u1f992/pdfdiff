@@ -10,7 +10,7 @@ USAGE:
     pdfdiff <A> <B> <OUT> [OPTIONS]
 
 OPTIONS:
-    --dpi <DPI>                    default: 150
+    --dpi <DPI>                    default: 72
     --alpha                        default: true
     --mask <PATH>                  default: undefined
     --align <resize | top-left | top-center | top-right
