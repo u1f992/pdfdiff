@@ -1,74 +1,62 @@
 import alias from "@rollup/plugin-alias";
 import commonjs from "@rollup/plugin-commonjs";
 import { nodeResolve } from "@rollup/plugin-node-resolve";
-import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "rollup";
 import copy from "rollup-plugin-copy";
 
+const resolve = (id) => fileURLToPath(import.meta.resolve(id));
+const resolveFromPdfdiff = createRequire(
+  import.meta.resolve("@u1f992/pdfdiff/package.json"),
+).resolve;
+
+const browserResolve = () => nodeResolve({ exportConditions: ["browser"] });
+
 const plugins = [
-  nodeResolve(),
+  browserResolve(),
   commonjs(),
   copy({
     targets: [
       {
-        src: "node_modules/coi-serviceworker/coi-serviceworker.min.js",
-        dest: "site",
+        src: resolve("coi-serviceworker/coi-serviceworker.min.js"),
+        dest: "dist",
       },
       {
         src: "src/index.html",
-        dest: "site",
+        dest: "dist",
       },
       {
         src: "src/style.css",
-        dest: "site",
+        dest: "dist",
       },
       {
-        src: "src/wasm/core.wasm",
-        dest: "site",
+        src: resolve("@u1f992/pdfdiff/dist/wasm/core.wasm"),
+        dest: "dist",
       },
       {
-        src: "node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm",
-        dest: "site",
+        src: resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
+        dest: "dist",
       },
       // Ghostscript (gs-wasm) Emscripten glue + binary. The `index.js`/
-      // `worker.js` ESM wrappers are re-bundled (below) into site/gs-wasm/ so
+      // `worker.js` ESM wrappers are re-bundled (below) into dist/gs-wasm/ so
       // their bare imports (`web-worker`, `upath`) resolve in the browser; the
       // large glue is shipped as-is and imported as a sibling by worker.js.
       {
         src: [
-          "node_modules/@u1f992/gs-wasm/dist/gs.js",
-          "node_modules/@u1f992/gs-wasm/dist/gs.wasm",
+          resolveFromPdfdiff("@u1f992/gs-wasm/dist/gs.js"),
+          resolveFromPdfdiff("@u1f992/gs-wasm/dist/gs.wasm"),
         ],
-        dest: "site/gs-wasm",
+        dest: "dist/gs-wasm",
       },
     ],
   }),
 ];
 
 // gs-wasm is kept external (not bundled): the browser bundles load it from the
-// copied site/gs-wasm/ folder.
+// copied dist/gs-wasm/ folder.
 const GS_WASM = "@u1f992/gs-wasm";
 const gsWasmPaths = { [GS_WASM]: "./gs-wasm/index.js" };
-
-const jimpAlias = alias({
-  entries: [
-    {
-      find: "jimp",
-      replacement: path.resolve("node_modules/jimp/dist/browser/index.js"),
-    },
-  ],
-});
-
-const webWorkerAlias = alias({
-  entries: [
-    {
-      find: "web-worker",
-      replacement: path.resolve(
-        "node_modules/web-worker/dist/browser/index.cjs",
-      ),
-    },
-  ],
-});
 
 // gs-wasm's worker depends on `upath`, which imports node's `path`. Shim it for
 // the browser.
@@ -76,55 +64,55 @@ const pathAlias = alias({
   entries: [
     {
       find: "path",
-      replacement: path.resolve("node_modules/path-browserify/index.js"),
+      replacement: "path-browserify",
     },
   ],
 });
 
 const rollupConfig = defineConfig([
   {
-    input: "dist/worker.js",
+    input: resolve("@u1f992/pdfdiff/dist/worker.js"),
     output: {
-      file: "site/worker.js",
+      file: "dist/worker.js",
       sourcemap: true,
     },
-    plugins: [jimpAlias, ...plugins],
+    plugins,
   },
   {
-    input: "dist/browser.js",
+    input: "build/browser.js",
     external: [GS_WASM],
     output: {
-      file: "site/browser.js",
+      file: "dist/browser.js",
       sourcemap: true,
       paths: gsWasmPaths,
     },
-    plugins: [jimpAlias, webWorkerAlias, ...plugins],
+    plugins,
   },
-  // Re-bundle gs-wasm's ESM wrappers into site/gs-wasm/ with their bare
+  // Re-bundle gs-wasm's ESM wrappers into dist/gs-wasm/ with their bare
   // dependencies resolved, so the browser can load them as plain static files.
   // The main-thread wrapper spawns ./worker.js (sibling) via new URL(...).
   {
-    input: "node_modules/@u1f992/gs-wasm/dist/index.js",
+    input: resolveFromPdfdiff("@u1f992/gs-wasm/dist/index.js"),
     output: {
-      file: "site/gs-wasm/index.js",
+      file: "dist/gs-wasm/index.js",
       format: "es",
       sourcemap: true,
     },
-    plugins: [webWorkerAlias, nodeResolve(), commonjs()],
+    plugins: [browserResolve(), commonjs()],
   },
   // The worker wrapper imports the (large) emscripten glue as a sibling
   // ./gs.js, which is copied verbatim; everything else (upath, status) is
   // bundled in.
   {
-    input: "node_modules/@u1f992/gs-wasm/dist/worker.js",
+    input: resolveFromPdfdiff("@u1f992/gs-wasm/dist/worker.js"),
     external: (id) => id === "./gs.js" || id.endsWith("/gs.js"),
     output: {
-      file: "site/gs-wasm/worker.js",
+      file: "dist/gs-wasm/worker.js",
       format: "es",
       sourcemap: true,
       paths: { "./gs.js": "./gs.js" },
     },
-    plugins: [pathAlias, nodeResolve(), commonjs()],
+    plugins: [pathAlias, browserResolve(), commonjs()],
   },
 ]);
 

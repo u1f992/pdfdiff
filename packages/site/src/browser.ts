@@ -3,8 +3,7 @@
 import encode from "@jsquash/png/encode.js";
 import { zipSync } from "fflate";
 
-import * as pdfdiff from "./index.ts";
-import { VERSION } from "./version.ts";
+import * as pdfdiff from "@u1f992/pdfdiff";
 
 async function encodeBitmapToPng(img: {
   width: number;
@@ -23,7 +22,7 @@ async function encodeBitmapToPng(img: {
 }
 
 const versionEl = document.getElementById("version");
-if (versionEl) versionEl.textContent = "v" + VERSION;
+if (versionEl) versionEl.textContent = "v" + pdfdiff.VERSION;
 
 const hideNoDiffEl = document.getElementById(
   "hide-no-diff",

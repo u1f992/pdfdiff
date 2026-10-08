@@ -19,7 +19,7 @@ import type {
   ReadyMessage,
 } from "./worker.ts";
 
-export { withIndex, isValidAlignStrategy, parseHex, formatHex, perf };
+export { withIndex, isValidAlignStrategy, parseHex, formatHex, perf, VERSION };
 
 type Options = {
   dpi: number;

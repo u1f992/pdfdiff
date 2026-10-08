@@ -43,6 +43,7 @@ jobs:
         run: |
           npm ci
           npm run build
+          npm run build --workspace @u1f992/pdfdiff-site
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
@@ -50,7 +51,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: "./site"
+          path: "./packages/site/dist"
 
   # Deployment job
   deploy:
