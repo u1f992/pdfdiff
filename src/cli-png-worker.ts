@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parentPort } from "node:worker_threads";
 
-import encode, { init } from "@jsquash/png/encode";
+import encode, { init } from "@jsquash/png/encode.js";
 
 export type EncodeJob = {
   width: number;
@@ -14,7 +14,7 @@ export type EncodeJob = {
 export type EncodeReply = { ok: true } | { ok: false; error: string };
 
 const wasmPath = fileURLToPath(
-  new URL("./squoosh_png_bg.wasm", import.meta.url),
+  import.meta.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
 );
 await init(fs.readFileSync(wasmPath));
 

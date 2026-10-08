@@ -6,6 +6,9 @@
   "bin": {
     "pdfdiff": "dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "test": "node --test",
     "test:cli": "node dist/cli.js test/a.pdf test/b.pdf out --mask test/mask.pdf --dpi 300 && echo \"expected: Page 1, Addition: 7500, Deletion: 7500, Modification: 7500\"",
@@ -14,8 +17,10 @@
     "format:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh format",
     "tidy:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh tidy",
     "clean:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh clean",
-    "build": "npm run build:wasm && npm run build:version && rollup -c",
-    "serve": "npm run build && http-server dist"
+    "build:lib": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/wasm dist/wasm",
+    "build:site": "rm -rf site && rollup -c",
+    "build": "npm run build:wasm && npm run build:version && npm run build:lib && npm run build:site",
+    "serve": "npm run build && http-server site"
   },
   "repository": {
     "type": "git",
@@ -33,7 +38,6 @@
     "@rollup/plugin-alias": "^6.0.0",
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
-    "@rollup/plugin-typescript": "^12.3.0",
     "@types/node": "^22.20.5",
     "coi-serviceworker": "^0.1.7",
     "fflate": "^0.8.3",
@@ -42,8 +46,7 @@
     "prettier": "^3.9.9",
     "rollup": "^4.64.2",
     "rollup-plugin-copy": "^3.5.0",
-    "tslib": "^2.8.1",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@jsquash/png": "^3.1.1",

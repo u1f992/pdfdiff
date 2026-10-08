@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import encode from "@jsquash/png/encode";
+import encode from "@jsquash/png/encode.js";
 import { zipSync } from "fflate";
 
 import * as pdfdiff from "./index.ts";
