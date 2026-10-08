@@ -21,6 +21,10 @@ OPTIONS:
     --modification-color <#HEX>    default: #ffc105ff
     --workers <N>                  default: min(CPU cores, 4)
     --out-type <directory | diff-pdf | a-b-diff-pdf>    default: directory
+             directory       <OUT>/<page>/{a,b,diff}.png
+             diff-pdf        <OUT> is a PDF of the diff images
+             a-b-diff-pdf    <OUT> is a PDF of A, B and the diff side by side
+                             (a PDF is written only when a page is output)
     --exit-code                    exit 1 if differences are found
     --diff-only                    output only pages with differences
     -v, --version

@@ -215,6 +215,10 @@ OPTIONS:
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
     --workers <N>                  default: ${defaultOptions.workers}
     --out-type <directory | diff-pdf | a-b-diff-pdf>    default: directory
+             directory       <OUT>/<page>/{a,b,diff}.png
+             diff-pdf        <OUT> is a PDF of the diff images
+             a-b-diff-pdf    <OUT> is a PDF of A, B and the diff side by side
+                             (a PDF is written only when a page is output)
     --exit-code                    exit 1 if differences are found
     --diff-only                    output only pages with differences
     -v, --version
@@ -235,13 +239,6 @@ NOTES:
     bytes. --workers defaults to the CPU core count (capped at 4); lower it to
     reduce memory, or raise it for large jobs on big machines. Keep the total
     under ~80% of available memory.
-
-    --out-type selects what <OUT> receives:
-      directory       <OUT>/<page>/{a,b,diff}.png
-      diff-pdf        the diff images of all pages joined into the PDF <OUT>
-      a-b-diff-pdf    A, B and the diff of each page placed side by side,
-                      joined into the PDF <OUT>
-    A PDF is written only when at least one page is output.
 `);
   process.exit(0);
 }
