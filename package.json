@@ -11,7 +11,6 @@
   ],
   "scripts": {
     "test": "node --test",
-    "test:cli": "node dist/cli.js test/a.pdf test/b.pdf out --mask test/mask.pdf --dpi 300 && echo \"expected: Page 1, Addition: 7500, Deletion: 7500, Modification: 7500\"",
     "build:version": "node scripts/version.ts",
     "build:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh",
     "format:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh format",

@@ -10,9 +10,9 @@ import {
   parseHex,
   visualizeDifferences,
   withIndex,
-} from "./index.ts";
+} from "../src/index.ts";
 
-const fixtures = new URL("../test/", import.meta.url);
+const fixtures = new URL("./fixtures/", import.meta.url);
 const readFixture = (name: string) =>
   new Uint8Array(fs.readFileSync(new URL(name, fixtures)));
 

@@ -1,7 +1,7 @@
 import assert from "assert";
 import test from "node:test";
 
-import { withIndex } from "./iterable.ts";
+import { withIndex } from "../src/iterable.ts";
 
 test("withIndex", async () => {
   assert.deepStrictEqual(

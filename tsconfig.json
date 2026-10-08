@@ -1,10 +1,6 @@
 {
   // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
-    // File Layout
-    "rootDir": "./src",
-    "outDir": "./dist",
-
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
     "module": "nodenext",
@@ -44,7 +40,5 @@
     "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true
   },
-  // Keep `tsc --noEmit` runnable as a type check: scripts/version.ts is run
-  // directly by node (type stripping) and lives outside rootDir.
-  "include": ["src"]
+  "include": ["src", "tests", "scripts"]
 }

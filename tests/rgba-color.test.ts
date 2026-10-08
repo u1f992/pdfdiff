@@ -1,7 +1,7 @@
 import assert from "assert";
 import test from "node:test";
 
-import { parseHex, formatHex } from "./rgba-color.ts";
+import { parseHex, formatHex } from "../src/rgba-color.ts";
 
 test("parseHex", async (ctx) => {
   await ctx.test("#rgb", () => {
