@@ -5,7 +5,6 @@ import path from "node:path";
 import util from "node:util";
 import { Worker as ThreadWorker } from "node:worker_threads";
 
-import { concatPdfs, renderDiffPage, renderSideBySidePage } from "./cli-pdf.ts";
 import type { EncodeJob, EncodeReply } from "./cli-png-worker.ts";
 import {
   isValidAlignStrategy,
@@ -15,6 +14,9 @@ import {
   formatHex,
   visualizeDifferences,
   perf,
+  PdfBuilder,
+  renderDiffPage,
+  renderSideBySidePage,
 } from "./index.ts";
 import type { JimpInstance } from "./jimp.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
@@ -128,29 +130,18 @@ function pdfOutput(
   concurrency: number,
   render: (page: Page) => Promise<Uint8Array<ArrayBuffer>>,
 ): Output {
-  const pages: Promise<Uint8Array<ArrayBuffer>>[] = [];
-  const waiting: Array<() => void> = [];
-  let inFlight = 0;
+  const builder = new PdfBuilder(concurrency);
   return {
-    async write(page) {
-      if (inFlight >= concurrency) {
-        await new Promise<void>((resolve) => waiting.push(resolve));
-      }
-      inFlight++;
-      pages.push(
-        render(page).finally(() => {
-          inFlight--;
-          waiting.shift()?.();
-        }),
-      );
+    write(page) {
+      return builder.add(() => render(page));
     },
     async close() {
-      const pdfs = await Promise.all(pages);
-      if (pdfs.length === 0) {
+      const pdf = await builder.finish();
+      if (pdf === null) {
         return;
       }
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
-      fs.writeFileSync(outPath, await concatPdfs(pdfs));
+      fs.writeFileSync(outPath, pdf);
     },
   };
 }
@@ -317,8 +308,8 @@ const output =
         outPath,
         workers,
         outType === "diff-pdf"
-          ? ({ diff }) => renderDiffPage(diff, dpi)
-          : ({ a, b, diff }) => renderSideBySidePage([a, b, diff], dpi),
+          ? ({ diff }) => renderDiffPage(diff.bitmap, dpi)
+          : ({ a, b, diff }) => renderSideBySidePage([a.bitmap, b.bitmap, diff.bitmap], dpi),
       );
 let hasDiff = false;
 

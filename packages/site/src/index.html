@@ -68,7 +68,12 @@
           <input type="checkbox" id="hide-no-diff" />
           Hide pages with no diff
         </label>
-        <button type="button" id="download-zip" disabled>Download zip</button>
+        <select id="download-type">
+          <option value="zip">zip</option>
+          <option value="diff-pdf">diff PDF</option>
+          <option value="a-b-diff-pdf">A-B-diff PDF</option>
+        </select>
+        <button type="button" id="download" disabled>Download</button>
       </form>
     </div>
     <div class="error" id="error-message"></div>

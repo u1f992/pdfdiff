@@ -1,10 +1,15 @@
 import { gs } from "@u1f992/gs-wasm";
 
-import type { JimpInstance } from "./jimp.ts";
 import { perf } from "./perf.ts";
 
+export type Bitmap = {
+  width: number;
+  height: number;
+  data: Uint8Array | Uint8ClampedArray;
+};
+
 type Placement = {
-  image: JimpInstance;
+  image: Bitmap;
   x: number;
   y: number;
   width: number;
@@ -30,11 +35,11 @@ const MARGIN_MM = 10;
 const FRAME_MM = 0.1;
 
 const mmToPt = (mm: number) => (mm * 72) / 25.4;
+const pxToPt = (px: number, dpi: number) => (px * 72) / dpi;
 const num = (n: number) => n.toFixed(3);
 
-function splitAlpha(image: JimpInstance) {
-  const rgba = image.bitmap.data;
-  const pixels = image.width * image.height;
+function splitAlpha({ width, height, data: rgba }: Bitmap) {
+  const pixels = width * height;
   const rgb = new Uint8Array(pixels * 3);
   const alpha = new Uint8Array(pixels);
   let opaque = true;
@@ -48,13 +53,34 @@ function splitAlpha(image: JimpInstance) {
   return { rgb, alpha: opaque ? null : alpha };
 }
 
+async function pdfwrite(
+  extraArgs: string[],
+  inputFiles: Record<string, Uint8Array<ArrayBuffer>>,
+  transfer: Transferable[],
+): Promise<Uint8Array<ArrayBuffer>> {
+  const { exitCode, outputFiles } = await gs({
+    args: [...PDFWRITE_ARGS, `-sOutputFile=${OUTPUT_VM_PATH}`, ...extraArgs],
+    inputFiles,
+    outputFilePaths: [OUTPUT_VM_PATH],
+    transfer,
+  });
+  if (exitCode !== 0) {
+    throw new Error(`gs pdfwrite failed (exit ${exitCode})`);
+  }
+  const pdf = outputFiles[OUTPUT_VM_PATH];
+  if (!pdf) {
+    throw new Error("gs pdfwrite produced no output");
+  }
+  return pdf;
+}
+
 async function renderPage(
   pageWidth: number,
   pageHeight: number,
   placements: Placement[],
   frameWidth: number | null,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const span = perf.span("cli.pdfRenderPage_ms");
+  const span = perf.span("pdfwrite.renderPage_ms");
   const inputFiles: Record<string, Uint8Array<ArrayBuffer>> = {};
   const ps = [`<< /PageSize [${num(pageWidth)} ${num(pageHeight)}] >> setpagedevice`];
   placements.forEach(({ image, x, y, width, height }, i) => {
@@ -84,32 +110,22 @@ async function renderPage(
   ps.push("showpage");
   inputFiles["page.ps"] = new TextEncoder().encode(ps.join("\n"));
 
-  const { exitCode, outputFiles } = await gs({
-    args: [...PDFWRITE_ARGS, "-dALLOWPSTRANSPARENCY", `-sOutputFile=${OUTPUT_VM_PATH}`, "page.ps"],
+  const pdf = await pdfwrite(
+    ["-dALLOWPSTRANSPARENCY", "page.ps"],
     inputFiles,
-    outputFilePaths: [OUTPUT_VM_PATH],
-    transfer: Object.values(inputFiles).map((bytes) => bytes.buffer),
-  });
+    Object.values(inputFiles).map((bytes) => bytes.buffer),
+  );
   span.stop();
-  if (exitCode !== 0) {
-    throw new Error(`gs pdfwrite failed (exit ${exitCode})`);
-  }
-  const pdf = outputFiles[OUTPUT_VM_PATH];
-  if (!pdf) {
-    throw new Error("gs pdfwrite produced no output");
-  }
   return pdf;
 }
 
-const pxToPt = (px: number, dpi: number) => (px * 72) / dpi;
-
-export function renderDiffPage(diff: JimpInstance, dpi: number) {
+export function renderDiffPage(diff: Bitmap, dpi: number) {
   const width = pxToPt(diff.width, dpi);
   const height = pxToPt(diff.height, dpi);
   return renderPage(width, height, [{ image: diff, x: 0, y: 0, width, height }], null);
 }
 
-export function renderSideBySidePage(images: JimpInstance[], dpi: number) {
+export function renderSideBySidePage(images: Bitmap[], dpi: number) {
   const margin = mmToPt(MARGIN_MM);
   const sizes = images.map((image) => ({
     image,
@@ -126,21 +142,38 @@ export function renderSideBySidePage(images: JimpInstance[], dpi: number) {
   return renderPage(x, rowHeight + margin * 2, placements, mmToPt(FRAME_MM));
 }
 
-export async function concatPdfs(pdfs: Uint8Array<ArrayBuffer>[]) {
-  const span = perf.span("cli.pdfConcat_ms");
-  const inputFiles = Object.fromEntries(pdfs.map((pdf, i) => [`${i}.pdf`, pdf]));
-  const { exitCode, outputFiles } = await gs({
-    args: [...PDFWRITE_ARGS, `-sOutputFile=${OUTPUT_VM_PATH}`, ...Object.keys(inputFiles)],
-    inputFiles,
-    outputFilePaths: [OUTPUT_VM_PATH],
-  });
-  span.stop();
-  if (exitCode !== 0) {
-    throw new Error(`gs pdfwrite failed (exit ${exitCode})`);
+export class PdfBuilder {
+  private readonly concurrency: number;
+  private readonly pages: Promise<Uint8Array<ArrayBuffer>>[] = [];
+  private readonly waiting: Array<() => void> = [];
+  private inFlight = 0;
+
+  constructor(concurrency: number) {
+    this.concurrency = concurrency;
   }
-  const pdf = outputFiles[OUTPUT_VM_PATH];
-  if (!pdf) {
-    throw new Error("gs pdfwrite produced no output");
+
+  async add(render: () => Promise<Uint8Array<ArrayBuffer>>) {
+    if (this.inFlight >= this.concurrency) {
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
+    }
+    this.inFlight++;
+    const page = render().finally(() => {
+      this.inFlight--;
+      this.waiting.shift()?.();
+    });
+    page.catch(() => {});
+    this.pages.push(page);
   }
-  return pdf;
+
+  async finish(): Promise<Uint8Array<ArrayBuffer> | null> {
+    const pdfs = await Promise.all(this.pages);
+    if (pdfs.length === 0) {
+      return null;
+    }
+    const span = perf.span("pdfwrite.concat_ms");
+    const inputFiles = Object.fromEntries(pdfs.map((pdf, i) => [`${i}.pdf`, pdf]));
+    const pdf = await pdfwrite(Object.keys(inputFiles), inputFiles, []);
+    span.stop();
+    return pdf;
+  }
 }
