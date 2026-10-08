@@ -5,6 +5,7 @@ import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
 import { countPages, renderPageRangePng } from "./pdf.ts";
+import { PdfBuilder, renderDiffPage, renderSideBySidePage, type Bitmap } from "./pdfwrite.ts";
 import { perf } from "./perf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
@@ -19,7 +20,18 @@ import type {
   ReadyMessage,
 } from "./worker.ts";
 
-export { withIndex, isValidAlignStrategy, parseHex, formatHex, perf, VERSION };
+export {
+  withIndex,
+  isValidAlignStrategy,
+  parseHex,
+  formatHex,
+  perf,
+  VERSION,
+  PdfBuilder,
+  renderDiffPage,
+  renderSideBySidePage,
+  type Bitmap,
+};
 
 type Options = {
   dpi: number;

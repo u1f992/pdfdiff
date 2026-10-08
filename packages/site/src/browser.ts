@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import decode from "@jsquash/png/decode.js";
 import encode from "@jsquash/png/encode.js";
 import { zipSync } from "fflate";
 
@@ -11,7 +12,7 @@ async function encodeBitmapToPng(img: {
   bitmap: {
     data: Uint8Array<ArrayBuffer> | Uint8ClampedArray<ArrayBuffer>;
   };
-}): Promise<Uint8Array> {
+}): Promise<Uint8Array<ArrayBuffer>> {
   const data = img.bitmap.data;
   const view: Uint8ClampedArray<ArrayBuffer> =
     data instanceof Uint8ClampedArray
@@ -31,42 +32,107 @@ const applyHideNoDiff = () => {
 hideNoDiffEl?.addEventListener("change", applyHideNoDiff);
 applyHideNoDiff();
 
-const downloadButton = document.getElementById("download-zip") as HTMLButtonElement | null;
+const downloadTypeEl = document.getElementById("download-type") as HTMLSelectElement | null;
+const downloadButton = document.getElementById("download") as HTMLButtonElement | null;
 type ResultPage = {
-  a: Uint8Array;
-  b: Uint8Array;
-  diff: Uint8Array;
+  a: Uint8Array<ArrayBuffer>;
+  b: Uint8Array<ArrayBuffer>;
+  diff: Uint8Array<ArrayBuffer>;
   hasDiff: boolean;
 };
-let lastResultPages: Map<number, ResultPage> | null = null;
+type Result = {
+  pages: Map<number, ResultPage>;
+  dpi: number;
+  workers: number;
+};
+let lastResult: Result | null = null;
 const updateDownloadLabel = () => {
   if (!downloadButton) return;
-  downloadButton.textContent = hideNoDiffEl?.checked ? "Download zip (diff only)" : "Download zip";
+  downloadButton.textContent = hideNoDiffEl?.checked ? "Download (diff only)" : "Download";
 };
 hideNoDiffEl?.addEventListener("change", updateDownloadLabel);
 updateDownloadLabel();
 
-downloadButton?.addEventListener("click", () => {
-  if (!lastResultPages) return;
-  const diffOnly = !!hideNoDiffEl?.checked;
-  const files: Record<string, Uint8Array> = {};
-  for (const [i, page] of lastResultPages) {
-    if (diffOnly && !page.hasDiff) continue;
-    files[`${i}/a.png`] = page.a;
-    files[`${i}/b.png`] = page.b;
-    files[`${i}/diff.png`] = page.diff;
-  }
-  if (Object.keys(files).length === 0) return;
-  const zipped = zipSync(files, { level: 0 });
-  const blob = new Blob([new Uint8Array(zipped)], { type: "application/zip" });
-  const url = URL.createObjectURL(blob);
+function saveFile(bytes: Uint8Array<ArrayBuffer>, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = diffOnly ? "pdfdiff-result-diff-only.zip" : "pdfdiff-result.zip";
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+async function buildPdf(
+  pages: ResultPage[],
+  { dpi, workers }: Result,
+  render: (pngs: ResultPage, dpi: number) => Promise<Uint8Array<ArrayBuffer>>,
+) {
+  const builder = new pdfdiff.PdfBuilder(workers);
+  for (const page of pages) {
+    await builder.add(() => render(page, dpi));
+  }
+  return builder.finish();
+}
+
+const renderDiffPdfPage = async ({ diff }: ResultPage, dpi: number) =>
+  pdfdiff.renderDiffPage(await decode(diff.buffer), dpi);
+
+const renderSideBySidePdfPage = async ({ a, b, diff }: ResultPage, dpi: number) =>
+  pdfdiff.renderSideBySidePage(
+    await Promise.all([a, b, diff].map((png) => decode(png.buffer))),
+    dpi,
+  );
+
+downloadButton?.addEventListener("click", async () => {
+  if (!lastResult) return;
+  const result = lastResult;
+  const diffOnly = !!hideNoDiffEl?.checked;
+  const suffix = diffOnly ? "-diff-only" : "";
+  const pages = [...result.pages].filter(([, page]) => !diffOnly || page.hasDiff);
+  if (pages.length === 0) return;
+
+  const type = downloadTypeEl?.value ?? "zip";
+  if (type === "zip") {
+    const files: Record<string, Uint8Array> = {};
+    for (const [i, page] of pages) {
+      files[`${i}/a.png`] = page.a;
+      files[`${i}/b.png`] = page.b;
+      files[`${i}/diff.png`] = page.diff;
+    }
+    saveFile(
+      new Uint8Array(zipSync(files, { level: 0 })),
+      "application/zip",
+      `pdfdiff-result${suffix}.zip`,
+    );
+    return;
+  }
+
+  const errorElement = document.getElementById("error-message");
+  if (errorElement) errorElement.textContent = "";
+  downloadButton.disabled = true;
+  downloadButton.textContent = "Generating...";
+  try {
+    const [render, name] =
+      type === "diff-pdf"
+        ? [renderDiffPdfPage, "pdfdiff-diff"]
+        : [renderSideBySidePdfPage, "pdfdiff-a-b-diff"];
+    const pdf = await buildPdf(
+      pages.map(([, page]) => page),
+      result,
+      render,
+    );
+    if (pdf !== null) saveFile(pdf, "application/pdf", `${name}${suffix}.pdf`);
+  } catch (e) {
+    console.error(e);
+    if (errorElement) {
+      errorElement.textContent = `Error: ${(e as Error).message}`;
+    }
+  } finally {
+    downloadButton.disabled = lastResult === null;
+    updateDownloadLabel();
+  }
 });
 
 async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
@@ -98,9 +164,8 @@ document.getElementById("pdf-diff-form")?.addEventListener("submit", async (even
     submitButton.textContent = "Preparing...";
   }
   if (downloadButton) downloadButton.disabled = true;
-  lastResultPages = null;
+  lastResult = null;
   const resultPages = new Map<number, ResultPage>();
-  let completed = false;
 
   try {
     const pdfAFile = (document.getElementById("pdf-a") as HTMLInputElement | null)?.files?.[0];
@@ -246,7 +311,13 @@ document.getElementById("pdf-diff-form")?.addEventListener("submit", async (even
       pageResult.appendChild(imagesTable);
       resultsContainer?.appendChild(pageResult);
     }
-    completed = true;
+    if (resultPages.size > 0) {
+      lastResult = {
+        pages: resultPages,
+        dpi: options.dpi ?? pdfdiff.defaultOptions.dpi,
+        workers: options.workers ?? pdfdiff.defaultOptions.workers,
+      };
+    }
   } catch (e) {
     console.error(e);
     if (errorElement) {
@@ -257,9 +328,6 @@ document.getElementById("pdf-diff-form")?.addEventListener("submit", async (even
       submitButton.disabled = false;
       submitButton.textContent = originalSubmitText;
     }
-    if (completed && resultPages.size > 0) {
-      lastResultPages = resultPages;
-      if (downloadButton) downloadButton.disabled = false;
-    }
+    if (downloadButton) downloadButton.disabled = lastResult === null;
   }
 });

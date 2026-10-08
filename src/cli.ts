@@ -14,7 +14,11 @@ import {
   formatHex,
   visualizeDifferences,
   perf,
+  PdfBuilder,
+  renderDiffPage,
+  renderSideBySidePage,
 } from "./index.ts";
+import type { JimpInstance } from "./jimp.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
 import { VERSION } from "./version.ts";
 
@@ -70,6 +74,82 @@ class PngWriterPool {
   }
 }
 
+type Page = { index: number; a: JimpInstance; b: JimpInstance; diff: JimpInstance };
+
+type Output = {
+  write(page: Page): Promise<void>;
+  close(): Promise<void>;
+};
+
+function directoryOutput(outDir: string, workers: number): Output {
+  fs.mkdirSync(outDir, { recursive: true });
+  const writerPool = new PngWriterPool(workers, new URL("./cli-png-worker.js", import.meta.url));
+  const pendingWrites: Promise<void>[] = [];
+  return {
+    write({ index, a, b, diff }) {
+      const dir = path.join(outDir, index.toString(10));
+      fs.mkdirSync(dir, { recursive: true });
+      const sSubmit = perf.span("cli.poolSubmit_ms");
+      const aBuf = sliceBackingBuffer(a.bitmap.data);
+      const bBuf = sliceBackingBuffer(b.bitmap.data);
+      const dBuf = sliceBackingBuffer(diff.bitmap.data);
+      pendingWrites.push(
+        writerPool.submit({
+          width: a.width,
+          height: a.height,
+          data: aBuf,
+          path: path.join(dir, "a.png"),
+        }),
+        writerPool.submit({
+          width: b.width,
+          height: b.height,
+          data: bBuf,
+          path: path.join(dir, "b.png"),
+        }),
+        writerPool.submit({
+          width: diff.width,
+          height: diff.height,
+          data: dBuf,
+          path: path.join(dir, "diff.png"),
+        }),
+      );
+      sSubmit.stop();
+      return Promise.resolve();
+    },
+    async close() {
+      const sDrain = perf.span("cli.poolDrain_ms");
+      await Promise.all(pendingWrites);
+      sDrain.stop();
+      await writerPool.terminate();
+    },
+  };
+}
+
+function pdfOutput(
+  outPath: string,
+  concurrency: number,
+  render: (page: Page) => Promise<Uint8Array<ArrayBuffer>>,
+): Output {
+  const builder = new PdfBuilder(concurrency);
+  return {
+    write(page) {
+      return builder.add(() => render(page));
+    },
+    async close() {
+      const pdf = await builder.finish();
+      if (pdf === null) {
+        return;
+      }
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, pdf);
+    },
+  };
+}
+
+const outTypes = ["directory", "diff-pdf", "a-b-diff-pdf"] as const;
+type OutType = (typeof outTypes)[number];
+const isOutType = (str: string): str is OutType => (outTypes as readonly string[]).includes(str);
+
 // Errors always exit 2, following diff(1)'s 0/1/2 convention, so that with
 // --exit-code a caller can tell "differences found" (1) from a failed run.
 process.on("uncaughtException", (err) => {
@@ -94,6 +174,7 @@ const {
     "deletion-color": deletionColorHex,
     "modification-color": modificationColorHex,
     workers: workers_,
+    "out-type": outType_,
     "exit-code": exitCode_,
     "diff-only": diffOnly_,
     version,
@@ -110,6 +191,7 @@ const {
     "deletion-color": { type: "string" },
     "modification-color": { type: "string" },
     workers: { type: "string" },
+    "out-type": { type: "string" },
     "exit-code": { type: "boolean" },
     "diff-only": { type: "boolean" },
     version: { type: "boolean", short: "v" },
@@ -119,7 +201,7 @@ const {
 
 if (help) {
   console.log(`USAGE:
-    pdfdiff <A> <B> <OUTDIR> [OPTIONS]
+    pdfdiff <A> <B> <OUT> [OPTIONS]
 
 OPTIONS:
     --dpi <DPI>                    default: ${defaultOptions.dpi}
@@ -132,8 +214,9 @@ OPTIONS:
     --deletion-color <#HEX>        default: ${formatHex(defaultOptions.pallet.deletion)}
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
     --workers <N>                  default: ${defaultOptions.workers}
+    --out-type <directory | diff-pdf | a-b-diff-pdf>    default: directory
     --exit-code                    exit 1 if differences are found
-    --diff-only                    output directories only for pages with differences
+    --diff-only                    output only pages with differences
     -v, --version
     -h, --help
 
@@ -152,6 +235,13 @@ NOTES:
     bytes. --workers defaults to the CPU core count (capped at 4); lower it to
     reduce memory, or raise it for large jobs on big machines. Keep the total
     under ~80% of available memory.
+
+    --out-type selects what <OUT> receives:
+      directory       <OUT>/<page>/{a,b,diff}.png
+      diff-pdf        the diff images of all pages joined into the PDF <OUT>
+      a-b-diff-pdf    A, B and the diff of each page placed side by side,
+                      joined into the PDF <OUT>
+    A PDF is written only when at least one page is output.
 `);
   process.exit(0);
 }
@@ -161,12 +251,12 @@ if (version) {
 }
 
 if (positionals.length !== 3) {
-  throw new Error("Expected 3 positional arguments: <A> <B> <OUTDIR>");
+  throw new Error("Expected 3 positional arguments: <A> <B> <OUT>");
 }
 
 const pdfA = fs.readFileSync(path.resolve(positionals[0]!));
 const pdfB = fs.readFileSync(path.resolve(positionals[1]!));
-const outDir = path.resolve(positionals[2]!);
+const outPath = path.resolve(positionals[2]!);
 
 const dpi = typeof dpi_ !== "undefined" ? parseInt(dpi_, 10) : defaultOptions.dpi;
 if (Number.isNaN(dpi)) {
@@ -203,12 +293,24 @@ if (Number.isNaN(workers) || workers < 1) {
   throw new Error("Invalid workers value");
 }
 
+const outType = outType_ ?? "directory";
+if (!isOutType(outType)) {
+  throw new Error("Invalid output type");
+}
+
 const exitCodeOnDiff = exitCode_ ?? false;
 const diffOnly = diffOnly_ ?? false;
 
-fs.mkdirSync(outDir, { recursive: true });
-const writerPool = new PngWriterPool(workers, new URL("./cli-png-worker.js", import.meta.url));
-const pendingWrites: Promise<void>[] = [];
+const output =
+  outType === "directory"
+    ? directoryOutput(outPath, workers)
+    : pdfOutput(
+        outPath,
+        workers,
+        outType === "diff-pdf"
+          ? ({ diff }) => renderDiffPage(diff.bitmap, dpi)
+          : ({ a, b, diff }) => renderSideBySidePage([a.bitmap, b.bitmap, diff.bitmap], dpi),
+      );
 let hasDiff = false;
 
 const _loopSpan = perf.span("cli.loopWall_ms");
@@ -237,38 +339,9 @@ for await (const [i, { a, b, diff, addition, deletion, modification }] of withIn
   if (diffOnly && !pageHasDiff) {
     continue;
   }
-  const dir = path.join(outDir, i.toString(10));
-  fs.mkdirSync(dir, { recursive: true });
-  const sSubmit = perf.span("cli.poolSubmit_ms");
-  const aBuf = sliceBackingBuffer(a.bitmap.data);
-  const bBuf = sliceBackingBuffer(b.bitmap.data);
-  const dBuf = sliceBackingBuffer(diff.bitmap.data);
-  pendingWrites.push(
-    writerPool.submit({
-      width: a.width,
-      height: a.height,
-      data: aBuf,
-      path: path.join(dir, "a.png"),
-    }),
-    writerPool.submit({
-      width: b.width,
-      height: b.height,
-      data: bBuf,
-      path: path.join(dir, "b.png"),
-    }),
-    writerPool.submit({
-      width: diff.width,
-      height: diff.height,
-      data: dBuf,
-      path: path.join(dir, "diff.png"),
-    }),
-  );
-  sSubmit.stop();
+  await output.write({ index: i, a, b, diff });
 }
-const sDrain = perf.span("cli.poolDrain_ms");
-await Promise.all(pendingWrites);
-sDrain.stop();
-await writerPool.terminate();
+await output.close();
 _loopSpan.stop();
 _wallSpan.stop();
 

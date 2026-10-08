@@ -7,7 +7,7 @@ Visualize and quantify differences between two PDF files.
 ```
 $ npx @u1f992/pdfdiff --help
 USAGE:
-    pdfdiff <A> <B> <OUTDIR> [OPTIONS]
+    pdfdiff <A> <B> <OUT> [OPTIONS]
 
 OPTIONS:
     --dpi <DPI>                    default: 150
@@ -20,8 +20,9 @@ OPTIONS:
     --deletion-color <#HEX>        default: #ff5724ff
     --modification-color <#HEX>    default: #ffc105ff
     --workers <N>                  default: min(CPU cores, 4)
+    --out-type <directory | diff-pdf | a-b-diff-pdf>    default: directory
     --exit-code                    exit 1 if differences are found
-    --diff-only                    output directories only for pages with differences
+    --diff-only                    output only pages with differences
     -v, --version
     -h, --help
 
