@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "rollup";
 import copy from "rollup-plugin-copy";
 
-const resolve = (id) => fileURLToPath(import.meta.resolve(id));
+const resolve = (id: string) => fileURLToPath(import.meta.resolve(id));
 const resolveFromPdfdiff = createRequire(
   import.meta.resolve("@u1f992/pdfdiff/package.json"),
 ).resolve;

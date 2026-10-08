@@ -13,15 +13,15 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "tsc --noEmit --ignoreConfig oxlint.config.ts && oxlint --fix src tests scripts && npm run lint --workspaces --if-present",
-    "format": "tsc --noEmit --ignoreConfig oxfmt.config.ts && oxfmt src tests scripts && npm run format --workspaces --if-present",
-    "test": "tsc && node --test \"tests/**/*.test.ts\"",
+    "lint": "tsc --project tsconfig.tools.json && oxlint --fix src tests scripts && npm run lint --workspaces --if-present",
+    "format": "tsc --project tsconfig.tools.json && oxfmt src tests scripts && npm run format --workspaces --if-present",
+    "test": "tsc --project tests && node --test \"tests/**/*.test.ts\"",
     "build:version": "node scripts/version.ts",
     "build:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh",
     "format:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh format",
     "tidy:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh tidy",
     "clean:wasm": "docker run --rm --volume .:/workdir --workdir /workdir --user root --entrypoint bash emscripten/emsdk:6.0.11 scripts/build-wasm.sh clean",
-    "build:lib": "rm -rf dist && tsc -p tsconfig.build.json && cp -r src/wasm dist/wasm",
+    "build:lib": "rm -rf dist && tsc && cp -r src/wasm dist/wasm",
     "build": "npm run build:wasm && npm run build:version && npm run build:lib"
   },
   "repository": {

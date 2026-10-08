@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    // @rollup/plugin-commonjs and rollup-plugin-copy ship `export default`
+    // declarations that nodenext reads as CommonJS, although Node resolves both
+    // default imports to the plugin function.
+    "module": "preserve"
+  },
+  "include": ["rollup.config.ts"]
+}

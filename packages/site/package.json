@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "oxlint --fix --config ../../oxlint.config.ts src rollup.config.js",
-    "format": "oxfmt --config ../../oxfmt.config.ts src rollup.config.js",
-    "build": "rm -rf build dist && tsc -p . && rollup -c",
+    "lint": "oxlint --fix --config ../../oxlint.config.ts src rollup.config.ts",
+    "format": "oxfmt --config ../../oxfmt.config.ts src rollup.config.ts",
+    "build": "rm -rf build dist && tsc -p . && tsc --project tsconfig.tools.json && rollup --config rollup.config.ts",
     "serve": "npm run build && http-server dist"
   },
   "dependencies": {
