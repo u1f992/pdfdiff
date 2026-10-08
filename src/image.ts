@@ -12,9 +12,7 @@ export function createEmptyImage(width: number, height: number) {
 
 export function fillWithEmpty(
   images:
-    | [JimpInstance, JimpInstance]
-    | [JimpInstance, null]
-    | [null, JimpInstance],
+    [JimpInstance, JimpInstance] | [JimpInstance, null] | [null, JimpInstance],
 ): [JimpInstance, JimpInstance];
 export function fillWithEmpty(
   images:

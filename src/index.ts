@@ -62,10 +62,7 @@ export const defaultOptions: Options = {
 };
 
 type WorkerResponse =
-  | LoadedMessage
-  | ReadyMessage
-  | PageResultMessage
-  | ErrorMessage;
+  LoadedMessage | ReadyMessage | PageResultMessage | ErrorMessage;
 
 class WorkerHandle {
   worker: InstanceType<typeof Worker>;
