@@ -37,12 +37,12 @@ void test("defaultOptions", () => {
   });
 });
 
-void test("defaultWorkers scales with cores, capped at 4", () => {
+void test("defaultWorkers scales with cores, capped at 8", () => {
   assert.equal(
     defaultWorkers,
-    Math.max(1, Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 4)),
+    Math.max(1, Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 8)),
   );
-  assert.ok(defaultWorkers >= 1 && defaultWorkers <= 4);
+  assert.ok(defaultWorkers >= 1 && defaultWorkers <= 8);
 });
 
 void test("isValidAlignStrategy", async (ctx) => {

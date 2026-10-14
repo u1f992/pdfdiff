@@ -240,16 +240,15 @@ EXIT STATUS:
 
 NOTES:
     Pages are rendered with Ghostscript (gs-wasm). Each of the --workers
-    workers loads its own Ghostscript (a 20 MB WASM binary, roughly 150 MB
-    of memory once loaded) and keeps one instance alive for the whole run,
-    rendering and diffing one page at a time with a rasterization working
-    set that grows with --dpi. The PDF output types write pages through a
-    second pool of up to --workers Ghostscript loads running pdfwrite, so
-    peak memory scales with --workers and --dpi. Each in-flight page
-    additionally holds decoded RGBA bitmaps of ~width*height*4 bytes.
-    --workers defaults to the CPU core count (capped at 4); lower it to
-    reduce memory, or raise it for large jobs on big machines. Keep the total
-    under ~80% of available memory.
+    workers loads its own Ghostscript and keeps one instance alive for the
+    whole run, rendering and diffing one page at a time. A worker holds
+    roughly 120 MB for Ghostscript plus copies of the input PDFs, a
+    rasterization working set that grows with --dpi, and decoded RGBA
+    bitmaps of ~width*height*4 bytes for the page in flight. The PDF output
+    types write pages through a second pool of up to --workers Ghostscript
+    workers running pdfwrite. --workers defaults to the CPU core count
+    (capped at 8); choose it from the memory a worker holds and the number
+    of pools, keeping the total under ~80% of available memory.
 `);
   process.exit(0);
 }

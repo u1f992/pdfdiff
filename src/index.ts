@@ -55,11 +55,10 @@ type Result = {
 
 // Default parallelism scales with the machine: rendering and diffing run across
 // several workers, so the out-of-the-box run uses the CPU rather than a single
-// core. Capped at 4 to keep the default memory footprint and oversubscription
-// modest; raise --workers explicitly for large jobs on big machines.
+// core.
 export const defaultWorkers = Math.max(
   1,
-  Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 4),
+  Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 8),
 );
 
 export const defaultOptions: Options = {
