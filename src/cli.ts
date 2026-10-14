@@ -9,6 +9,7 @@ import type { EncodeJob, EncodeReply } from "./cli-png-worker.ts";
 import {
   isValidAlignStrategy,
   defaultOptions,
+  defaultWorkersCap,
   withIndex,
   parseHex,
   formatHex,
@@ -222,7 +223,7 @@ OPTIONS:
     --addition-color <#HEX>        default: ${formatHex(defaultOptions.pallet.addition)}
     --deletion-color <#HEX>        default: ${formatHex(defaultOptions.pallet.deletion)}
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
-    --workers <N>                  default: ${defaultOptions.workers}
+    --workers <N>                  default: min(CPU cores, ${defaultWorkersCap})
     --out-type <directory | diff-pdf | a-b-diff-pdf>    default: ${defaultOutType}
              directory       <OUT>/<page>/{a,b,diff}.png
              diff-pdf        <OUT> is a PDF of the diff images
@@ -237,18 +238,6 @@ EXIT STATUS:
     0    success (with --exit-code: no differences found)
     1    differences found (only with --exit-code)
     2    error
-
-NOTES:
-    Pages are rendered with Ghostscript (gs-wasm). Each of the --workers
-    workers loads its own Ghostscript and keeps one instance alive for the
-    whole run, rendering and diffing one page at a time. A worker holds
-    roughly 120 MB for Ghostscript plus copies of the input PDFs, a
-    rasterization working set that grows with --dpi, and decoded RGBA
-    bitmaps of ~width*height*4 bytes for the page in flight. The PDF output
-    types write pages through a second pool of up to --workers Ghostscript
-    workers running pdfwrite. --workers defaults to the CPU core count
-    (capped at 8); choose it from the memory a worker holds and the number
-    of pools, keeping the total under ~80% of available memory.
 `);
   process.exit(0);
 }

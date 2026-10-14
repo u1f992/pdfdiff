@@ -55,11 +55,14 @@ type Result = {
 
 // Default parallelism scales with the machine: rendering and diffing run across
 // several workers, so the out-of-the-box run uses the CPU rather than a single
-// core.
-export const defaultWorkers = Math.max(
-  1,
-  Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 8),
-);
+// core. The cap bounds memory rather than CPU: each worker keeps a Ghostscript
+// (about 120 MB) plus its own copies of the input PDFs and the page in flight,
+// and the PDF output types add a second pool of as many pdfwrite workers.
+// Beyond the physical cores, extra workers slow each other down more than they
+// add, so large machines gain little from a higher value; pass --workers to
+// choose it from the memory budget.
+export const defaultWorkersCap = 8;
+export const defaultWorkers = Math.min(navigator.hardwareConcurrency, defaultWorkersCap);
 
 export const defaultOptions: Options = {
   dpi: 72,

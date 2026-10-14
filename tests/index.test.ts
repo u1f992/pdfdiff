@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   defaultOptions,
   defaultWorkers,
+  defaultWorkersCap,
   formatHex,
   isValidAlignStrategy,
   parseHex,
@@ -37,12 +38,8 @@ void test("defaultOptions", () => {
   });
 });
 
-void test("defaultWorkers scales with cores, capped at 8", () => {
-  assert.equal(
-    defaultWorkers,
-    Math.max(1, Math.min(globalThis.navigator?.hardwareConcurrency ?? 1, 8)),
-  );
-  assert.ok(defaultWorkers >= 1 && defaultWorkers <= 8);
+void test("defaultWorkers is the logical CPU count, capped", () => {
+  assert.equal(defaultWorkers, Math.min(navigator.hardwareConcurrency, defaultWorkersCap));
 });
 
 void test("isValidAlignStrategy", async (ctx) => {
