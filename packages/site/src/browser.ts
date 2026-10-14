@@ -38,11 +38,13 @@ type ResultPage = {
   a: Uint8Array<ArrayBuffer>;
   b: Uint8Array<ArrayBuffer>;
   diff: Uint8Array<ArrayBuffer>;
+  counts: pdfdiff.DiffCounts;
   hasDiff: boolean;
 };
 type Result = {
   pages: Map<number, ResultPage>;
   dpi: number;
+  pallet: pdfdiff.Pallet;
   workers: number;
 };
 let lastResult: Result | null = null;
@@ -66,24 +68,35 @@ function saveFile(bytes: Uint8Array<ArrayBuffer>, type: string, filename: string
 
 async function buildPdf(
   pages: ResultPage[],
-  { dpi, workers }: Result,
-  render: (pngs: ResultPage, dpi: number) => Promise<Uint8Array<ArrayBuffer>>,
+  result: Result,
+  render: (pngs: ResultPage, result: Result) => Promise<Uint8Array<ArrayBuffer>>,
 ) {
-  const builder = new pdfdiff.PdfBuilder(workers);
+  const builder = new pdfdiff.PdfBuilder(result.workers);
   for (const page of pages) {
-    await builder.add(() => render(page, dpi));
+    await builder.add(() => render(page, result));
   }
   return builder.finish();
 }
 
-const renderDiffPdfPage = async ({ diff }: ResultPage, dpi: number) =>
+const renderDiffPdfPage = async ({ diff }: ResultPage, { dpi }: Result) =>
   pdfdiff.renderDiffPage(await decode(diff.buffer), dpi);
 
-const renderSideBySidePdfPage = async ({ a, b, diff }: ResultPage, dpi: number) =>
-  pdfdiff.renderSideBySidePage(
-    await Promise.all([a, b, diff].map((png) => decode(png.buffer))),
+const renderSideBySidePdfPage = async (
+  { a, b, diff, counts }: ResultPage,
+  { dpi, pallet }: Result,
+) => {
+  const [aImage, bImage, diffImage] = await Promise.all([
+    decode(a.buffer),
+    decode(b.buffer),
+    decode(diff.buffer),
+  ]);
+  return pdfdiff.renderSideBySidePage(
+    { a: aImage, b: bImage, diff: diffImage },
+    pallet,
+    counts,
     dpi,
   );
+};
 
 downloadButton?.addEventListener("click", async () => {
   if (!lastResult) return;
@@ -280,6 +293,11 @@ document.getElementById("pdf-diff-form")?.addEventListener("submit", async (even
         a: aPng,
         b: bPng,
         diff: diffPng,
+        counts: {
+          addition: addition.length,
+          deletion: deletion.length,
+          modification: modification.length,
+        },
         hasDiff: totalDiff > 0,
       });
 
@@ -315,6 +333,11 @@ document.getElementById("pdf-diff-form")?.addEventListener("submit", async (even
       lastResult = {
         pages: resultPages,
         dpi: options.dpi ?? pdfdiff.defaultOptions.dpi,
+        pallet: {
+          addition: options.pallet?.addition ?? pdfdiff.defaultOptions.pallet.addition,
+          deletion: options.pallet?.deletion ?? pdfdiff.defaultOptions.pallet.deletion,
+          modification: options.pallet?.modification ?? pdfdiff.defaultOptions.pallet.modification,
+        },
         workers: options.workers ?? pdfdiff.defaultOptions.workers,
       };
     }

@@ -1,6 +1,8 @@
 import { gs } from "@u1f992/gs-wasm";
 
+import { type Pallet } from "./diff.ts";
 import { perf } from "./perf.ts";
+import { type RGBAColor } from "./rgba-color.ts";
 
 export type Bitmap = {
   width: number;
@@ -8,8 +10,14 @@ export type Bitmap = {
   data: Uint8Array | Uint8ClampedArray;
 };
 
+type Caption = {
+  label: string;
+  legend: { label: string; color: RGBAColor }[];
+};
+
 type Placement = {
   image: Bitmap;
+  caption: Caption | null;
   x: number;
   y: number;
   width: number;
@@ -33,10 +41,56 @@ const OUTPUT_VM_PATH = "output.pdf";
 
 const MARGIN_MM = 10;
 const FRAME_MM = 0.1;
+const CAPTION_FONT = "NimbusSans-Regular";
+const CAPTION_FONT_MM = 5;
+const CAPTION_GAP_MM = 2;
+const LEGEND_FONT_MM = 3.5;
+const LEGEND_INDENT_MM = 5;
+const LEGEND_SWATCH_MM = 2.5;
+const LEGEND_SWATCH_GAP_MM = 1;
+const LEGEND_ITEM_GAP_MM = 3;
 
 const mmToPt = (mm: number) => (mm * 72) / 25.4;
 const pxToPt = (px: number, dpi: number) => (px * 72) / dpi;
 const num = (n: number) => n.toFixed(3);
+const psString = (s: string) => `(${s.replace(/[\\()]/g, "\\$&")})`;
+const setFontPs = (sizeMm: number) =>
+  `/${CAPTION_FONT} findfont ${num(mmToPt(sizeMm))} scalefont setfont`;
+
+const legendItemGapMm = (i: number) => (i === 0 ? LEGEND_INDENT_MM : LEGEND_ITEM_GAP_MM);
+const legendSwatchAdvanceMm = LEGEND_SWATCH_MM + LEGEND_SWATCH_GAP_MM;
+
+function captionRightEdgePs({ label, legend }: Caption, x: number) {
+  const fixed = legend.reduce(
+    (acc, _, i) => acc + mmToPt(legendItemGapMm(i) + legendSwatchAdvanceMm),
+    x,
+  );
+  const textWidth = (s: string) => `${psString(s)} stringwidth pop add`;
+  return [
+    num(fixed),
+    setFontPs(CAPTION_FONT_MM),
+    textWidth(label),
+    setFontPs(LEGEND_FONT_MM),
+    ...legend.map((item) => textWidth(item.label)),
+  ].join(" ");
+}
+
+function captionPs({ label, legend }: Caption, x: number, baseline: number) {
+  const swatch = num(mmToPt(LEGEND_SWATCH_MM));
+  const ps = [
+    `0 setgray ${setFontPs(CAPTION_FONT_MM)} ${num(x)} ${num(baseline)} moveto ${psString(label)} show`,
+  ];
+  if (legend.length > 0) {
+    ps.push(setFontPs(LEGEND_FONT_MM));
+  }
+  legend.forEach(({ label, color: [r, g, b, a] }, i) => {
+    const rgb = [r, g, b].map((c) => num(c / 255)).join(" ");
+    ps.push(
+      `${num(mmToPt(legendItemGapMm(i)))} 0 rmoveto currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(legendSwatchAdvanceMm))} 0 rmoveto ${psString(label)} show`,
+    );
+  });
+  return ps;
+}
 
 function splitAlpha({ width, height, data: rgba }: Bitmap) {
   const pixels = width * height;
@@ -79,11 +133,20 @@ async function renderPage(
   pageHeight: number,
   placements: Placement[],
   frameWidth: number | null,
+  captionMargin: number,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const span = perf.span("pdfwrite.renderPage_ms");
   const inputFiles: Record<string, Uint8Array<ArrayBuffer>> = {};
-  const ps = [`<< /PageSize [${num(pageWidth)} ${num(pageHeight)}] >> setpagedevice`];
-  placements.forEach(({ image, x, y, width, height }, i) => {
+  const ps = [`/pageWidth ${num(pageWidth)} def`];
+  for (const { caption, x } of placements) {
+    if (caption !== null) {
+      ps.push(
+        `${captionRightEdgePs(caption, x)} ${num(captionMargin)} add dup pageWidth gt { /pageWidth exch def } { pop } ifelse`,
+      );
+    }
+  }
+  ps.push(`<< /PageSize [pageWidth ${num(pageHeight)}] >> setpagedevice`);
+  placements.forEach(({ image, caption, x, y, width, height }, i) => {
     const { rgb, alpha } = splitAlpha(image);
     const w = image.width;
     const h = image.height;
@@ -106,6 +169,9 @@ async function renderPage(
         `0 setgray ${num(frameWidth)} setlinewidth ${num(x - frameWidth / 2)} ${num(y - frameWidth / 2)} ${num(width + frameWidth)} ${num(height + frameWidth)} rectstroke`,
       );
     }
+    if (caption !== null) {
+      ps.push(...captionPs(caption, x, y + height + mmToPt(CAPTION_GAP_MM)));
+    }
   });
   ps.push("showpage");
   inputFiles["page.ps"] = new TextEncoder().encode(ps.join("\n"));
@@ -122,15 +188,48 @@ async function renderPage(
 export function renderDiffPage(diff: Bitmap, dpi: number) {
   const width = pxToPt(diff.width, dpi);
   const height = pxToPt(diff.height, dpi);
-  return renderPage(width, height, [{ image: diff, x: 0, y: 0, width, height }], null);
+  return renderPage(
+    width,
+    height,
+    [{ image: diff, caption: null, x: 0, y: 0, width, height }],
+    null,
+    0,
+  );
 }
 
-export function renderSideBySidePage(images: Bitmap[], dpi: number) {
+export type DiffCounts = {
+  addition: number;
+  deletion: number;
+  modification: number;
+};
+
+export function renderSideBySidePage(
+  { a, b, diff }: { a: Bitmap; b: Bitmap; diff: Bitmap },
+  pallet: Pallet,
+  counts: DiffCounts,
+  dpi: number,
+) {
+  const captioned: { image: Bitmap; caption: Caption }[] = [
+    { image: a, caption: { label: "A", legend: [] } },
+    { image: b, caption: { label: "B", legend: [] } },
+    {
+      image: diff,
+      caption: {
+        label: "Diff",
+        legend: [
+          { label: `Addition: ${counts.addition}`, color: pallet.addition },
+          { label: `Deletion: ${counts.deletion}`, color: pallet.deletion },
+          { label: `Modification: ${counts.modification}`, color: pallet.modification },
+        ],
+      },
+    },
+  ];
   const margin = mmToPt(MARGIN_MM);
-  const sizes = images.map((image) => ({
-    image,
-    width: pxToPt(image.width, dpi),
-    height: pxToPt(image.height, dpi),
+  const captionBand = mmToPt(CAPTION_GAP_MM + CAPTION_FONT_MM);
+  const sizes = captioned.map((c) => ({
+    ...c,
+    width: pxToPt(c.image.width, dpi),
+    height: pxToPt(c.image.height, dpi),
   }));
   const rowHeight = Math.max(...sizes.map((s) => s.height));
   const placements: Placement[] = [];
@@ -139,7 +238,7 @@ export function renderSideBySidePage(images: Bitmap[], dpi: number) {
     placements.push({ ...s, x, y: margin + rowHeight - s.height });
     x += s.width + margin;
   }
-  return renderPage(x, rowHeight + margin * 2, placements, mmToPt(FRAME_MM));
+  return renderPage(x, rowHeight + captionBand + margin * 2, placements, mmToPt(FRAME_MM), margin);
 }
 
 export class PdfBuilder {

@@ -17,6 +17,7 @@ import {
   PdfBuilder,
   renderDiffPage,
   renderSideBySidePage,
+  type DiffCounts,
 } from "./index.ts";
 import type { JimpInstance } from "./jimp.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
@@ -74,7 +75,13 @@ class PngWriterPool {
   }
 }
 
-type Page = { index: number; a: JimpInstance; b: JimpInstance; diff: JimpInstance };
+type Page = {
+  index: number;
+  a: JimpInstance;
+  b: JimpInstance;
+  diff: JimpInstance;
+  counts: DiffCounts;
+};
 
 type Output = {
   write(page: Page): Promise<void>;
@@ -307,7 +314,17 @@ const output =
         workers,
         outType === "diff-pdf"
           ? ({ diff }) => renderDiffPage(diff.bitmap, dpi)
-          : ({ a, b, diff }) => renderSideBySidePage([a.bitmap, b.bitmap, diff.bitmap], dpi),
+          : ({ a, b, diff, counts }) =>
+              renderSideBySidePage(
+                { a: a.bitmap, b: b.bitmap, diff: diff.bitmap },
+                {
+                  addition: additionColor,
+                  deletion: deletionColor,
+                  modification: modificationColor,
+                },
+                counts,
+                dpi,
+              ),
       );
 let hasDiff = false;
 
@@ -327,17 +344,22 @@ for await (const [i, { a, b, diff, addition, deletion, modification }] of withIn
   }),
   1,
 )) {
+  const counts: DiffCounts = {
+    addition: addition.length,
+    deletion: deletion.length,
+    modification: modification.length,
+  };
   console.log(
-    `Page ${i}, Addition: ${addition.length}, Deletion: ${deletion.length}, Modification: ${modification.length}`,
+    `Page ${i}, Addition: ${counts.addition}, Deletion: ${counts.deletion}, Modification: ${counts.modification}`,
   );
-  const pageHasDiff = addition.length > 0 || deletion.length > 0 || modification.length > 0;
+  const pageHasDiff = counts.addition > 0 || counts.deletion > 0 || counts.modification > 0;
   if (pageHasDiff) {
     hasDiff = true;
   }
   if (diffOnly && !pageHasDiff) {
     continue;
   }
-  await output.write({ index: i, a, b, diff });
+  await output.write({ index: i, a, b, diff, counts });
 }
 await output.close();
 _loopSpan.stop();
