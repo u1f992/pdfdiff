@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "oxlint --fix --config ../../oxlint.config.ts src rollup.config.ts",
-    "format": "oxfmt --config ../../oxfmt.config.ts src rollup.config.ts",
+    "lint": "oxlint --fix --config ../../oxlint.config.ts src tests rollup.config.ts",
+    "format": "oxfmt --config ../../oxfmt.config.ts src tests rollup.config.ts",
+    "test": "tsc --project tests && node --test \"tests/**/*.test.ts\"",
     "build": "rm -rf build dist && tsc -p . && tsc --project tsconfig.tools.json && rollup --config rollup.config.ts",
     "serve": "npm run build && http-server dist"
   },
@@ -17,6 +18,7 @@
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "http-server": "^14.1.1",
+    "playwright": "^1.64.0",
     "rollup": "^4.64.2",
     "rollup-plugin-copy": "^3.5.0"
   }
