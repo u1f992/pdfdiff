@@ -45,6 +45,11 @@ jobs:
           npm run build
           npm run build --workspace @u1f992/pdfdiff-site
 
+      - name: Test the site
+        run: |
+          npx --workspace @u1f992/pdfdiff-site playwright install --with-deps chromium
+          npm test --workspace @u1f992/pdfdiff-site
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 
