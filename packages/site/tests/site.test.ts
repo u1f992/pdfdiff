@@ -133,6 +133,14 @@ void test("zip downloads the page images", async () => {
   await page.close();
 });
 
+void test("names the worker that failed to load", async () => {
+  const page = await openForm("a.pdf", "b.pdf");
+  await page.route("**/worker.js*", (route) => route.abort());
+  await page.click("#submit");
+  await page.getByText(/^Error: Failed to load worker .*\/worker\.js/).waitFor({ timeout: 10_000 });
+  await page.close();
+});
+
 void test("diff-only with identical inputs outputs nothing", async () => {
   const page = await openForm("a.pdf", "a.pdf");
   await openOptions(page);

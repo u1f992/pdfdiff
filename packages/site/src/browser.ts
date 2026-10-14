@@ -91,6 +91,13 @@ async function readFileAsUint8Array(file: File): Promise<Uint8Array> {
   return new Uint8Array(await file.arrayBuffer());
 }
 
+function describeError(e: unknown): string {
+  if (e instanceof Error) {
+    return e.message !== "" ? e.message : e.name;
+  }
+  return String(e);
+}
+
 function field<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (element === null) {
@@ -221,7 +228,7 @@ form.addEventListener("submit", async (event) => {
     }
   } catch (e) {
     console.error(e);
-    messageEl.textContent = `Error: ${(e as Error).message}`;
+    messageEl.textContent = `Error: ${describeError(e)}`;
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = "Submit";

@@ -32,8 +32,9 @@ export class WorkerHandle<Request, Response extends { type: string }> {
         resolve?.(data as Response);
       }
     });
-    this.worker.addEventListener("error", (e: ErrorEvent) => {
-      this.failure = e.error ?? new Error(e.message);
+    this.worker.addEventListener("error", (e: Event) => {
+      const { error, message } = e as Partial<ErrorEvent>;
+      this.failure = error ?? new Error(message || `Failed to load worker ${url}`);
       const reject = this.pendingReject;
       this.pendingResolve = null;
       this.pendingReject = null;
