@@ -109,6 +109,34 @@ void test("removes the old service worker and asks for a reload once", async () 
   await context.close();
 });
 
+void test("requests every script and wasm with its content version", async () => {
+  const page = await browser.newPage();
+  const versions = new Map<string, string | null>();
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.origin === origin && url.pathname !== "/") {
+      versions.set(url.pathname, url.searchParams.get("v"));
+    }
+  });
+  await page.goto(origin);
+  await page.setInputFiles("#pdf-a", path.join(fixtures, "a.pdf"));
+  await page.setInputFiles("#pdf-b", path.join(fixtures, "b.pdf"));
+  await submitAndDownload(page);
+  assert.deepEqual([...versions.keys()].sort(), [
+    "/browser.js",
+    "/core.wasm",
+    "/gs-wasm/gs.js",
+    "/gs-wasm/gs.wasm",
+    "/pdfwrite-worker.js",
+    "/squoosh_png_bg.wasm",
+    "/worker.js",
+  ]);
+  for (const [pathname, version] of versions) {
+    assert.match(version ?? "", /^[0-9a-f]{16}$/, pathname);
+  }
+  await page.close();
+});
+
 void test("a-b-diff-pdf downloads a PDF", async () => {
   const page = await openForm("a.pdf", "b.pdf");
   await openOptions(page);

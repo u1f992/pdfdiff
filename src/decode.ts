@@ -1,9 +1,11 @@
 import decode, { init } from "@jsquash/png/decode.js";
 import * as jimp from "jimp";
 
+import { assetQuery } from "./assets.ts";
 import type { JimpInstance } from "./jimp.ts";
 
-const WASM_SPECIFIER = "@jsquash/png/codec/pkg/squoosh_png_bg.wasm";
+const WASM_FILE = "squoosh_png_bg.wasm";
+const WASM_SPECIFIER = `@jsquash/png/codec/pkg/${WASM_FILE}`;
 
 const isNode = typeof process === "object" && process.release?.name === "node";
 
@@ -15,7 +17,8 @@ async function loadCodec(): Promise<void> {
     ]);
     await init(readFileSync(fileURLToPath(import.meta.resolve(WASM_SPECIFIER))));
   } else {
-    await init();
+    const query = assetQuery(WASM_FILE);
+    await init(query === "" ? undefined : new URL(`./${WASM_FILE}${query}`, import.meta.url));
   }
 }
 

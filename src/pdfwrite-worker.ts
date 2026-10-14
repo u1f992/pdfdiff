@@ -1,5 +1,6 @@
 import createModule, { type MainModule } from "@u1f992/gs-wasm";
 
+import { locateVersioned } from "./assets.ts";
 import { gsCall } from "./gs.ts";
 import { perf } from "./perf.ts";
 import type { ErrorMessage } from "./worker-handle.ts";
@@ -36,7 +37,7 @@ const PDFWRITE_ARGS = [
   `-sOutputFile=${JOB_DIR}/${OUTPUT_NAME}`,
 ];
 
-const gsModule: Promise<MainModule> = createModule().then((gs) => {
+const gsModule: Promise<MainModule> = createModule({ locateFile: locateVersioned }).then((gs) => {
   gs.FS.mkdir(JOB_DIR);
   gs.FS.chdir(JOB_DIR);
   return gs;

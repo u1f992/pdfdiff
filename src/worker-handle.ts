@@ -1,6 +1,6 @@
 import Worker from "web-worker";
 
-import { VERSION } from "./version.ts";
+import { assetQuery } from "./assets.ts";
 
 export type ErrorMessage = {
   type: "error";
@@ -8,8 +8,8 @@ export type ErrorMessage = {
 };
 
 export function workerUrl(name: string): URL {
-  const ext = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
-  return new URL(`./${name}${ext}?v=${encodeURIComponent(VERSION)}`, import.meta.url);
+  const file = `${name}${import.meta.url.endsWith(".ts") ? ".ts" : ".js"}`;
+  return new URL(`./${file}${assetQuery(file)}`, import.meta.url);
 }
 
 export class WorkerHandle<Request, Response extends { type: string }> {

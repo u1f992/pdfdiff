@@ -1,5 +1,6 @@
 import createModule, { type Instance, type MainModule } from "@u1f992/gs-wasm";
 
+import { locateVersioned } from "./assets.ts";
 import { gsCall } from "./gs.ts";
 import { perf } from "./perf.ts";
 
@@ -25,7 +26,7 @@ export class PdfRenderer {
     alpha: boolean,
   ): Promise<PdfRenderer> {
     const sLoad = perf.span("pdf.loadModule_ms");
-    const gs = await createModule();
+    const gs = await createModule({ locateFile: locateVersioned });
     sLoad.stop();
 
     gs.FS.mkdir(INPUT_DIR);

@@ -1,3 +1,4 @@
+import { locateVersioned } from "./assets.ts";
 import { decodePng } from "./decode.ts";
 import { type Pallet } from "./diff.ts";
 import { alignSize, createEmptyImage } from "./image.ts";
@@ -58,7 +59,7 @@ let opts: {
 
 let wasm: MainModule | null = null;
 async function getWasm(): Promise<MainModule> {
-  if (!wasm) wasm = await createWasmModule();
+  if (!wasm) wasm = await createWasmModule({ locateFile: locateVersioned });
   return wasm;
 }
 
