@@ -20,10 +20,6 @@ const plugins = [
         dest: "dist",
       },
       {
-        src: "src/style.css",
-        dest: "dist",
-      },
-      {
         src: resolve("@u1f992/pdfdiff/dist/wasm/core.wasm"),
         dest: "dist",
       },
