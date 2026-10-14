@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pdfdiff</title>
+    <!--
+      Earlier deployments of this site registered coi-serviceworker to run
+      cross-origin isolated. Browsers keep that registration until it is
+      unregistered, so visitors from that time still have the old service
+      worker controlling this page.
+    -->
+    <script>
+      navigator.serviceWorker?.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
+    </script>
     <script type="module" src="./browser.js"></script>
   </head>
   <body>
