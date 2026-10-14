@@ -1,8 +1,9 @@
-import { gs } from "@u1f992/gs-wasm";
-
 import { type Pallet } from "./diff.ts";
+import type { PdfMessage, PdfwriteMessage } from "./pdfwrite-worker.ts";
 import { perf } from "./perf.ts";
 import { type RGBAColor } from "./rgba-color.ts";
+import { sliceBackingBuffer } from "./transferable.ts";
+import { WorkerHandle, workerUrl } from "./worker-handle.ts";
 
 export type Bitmap = {
   width: number;
@@ -24,20 +25,10 @@ type Placement = {
   height: number;
 };
 
-const PDFWRITE_ARGS = [
-  "-dNOPAUSE",
-  "-dBATCH",
-  "-dQUIET",
-  "-dNOSAFER",
-  "-sDEVICE=pdfwrite",
-  "-dAutoFilterColorImages=false",
-  "-dColorImageFilter=/FlateEncode",
-  "-dAutoFilterGrayImages=false",
-  "-dGrayImageFilter=/FlateEncode",
-  "-dDownsampleColorImages=false",
-  "-dDownsampleGrayImages=false",
-];
-const OUTPUT_VM_PATH = "output.pdf";
+export type PdfwriteJob = {
+  args: string[];
+  inputFiles: Record<string, Uint8Array<ArrayBuffer>>;
+};
 
 const MARGIN_MM = 10;
 const FRAME_MM = 0.1;
@@ -107,34 +98,13 @@ function splitAlpha({ width, height, data: rgba }: Bitmap) {
   return { rgb, alpha: opaque ? null : alpha };
 }
 
-async function pdfwrite(
-  extraArgs: string[],
-  inputFiles: Record<string, Uint8Array<ArrayBuffer>>,
-  transfer: Transferable[],
-): Promise<Uint8Array<ArrayBuffer>> {
-  const { exitCode, outputFiles } = await gs({
-    args: [...PDFWRITE_ARGS, `-sOutputFile=${OUTPUT_VM_PATH}`, ...extraArgs],
-    inputFiles,
-    outputFilePaths: [OUTPUT_VM_PATH],
-    transfer,
-  });
-  if (exitCode !== 0) {
-    throw new Error(`gs pdfwrite failed (exit ${exitCode})`);
-  }
-  const pdf = outputFiles[OUTPUT_VM_PATH];
-  if (!pdf) {
-    throw new Error("gs pdfwrite produced no output");
-  }
-  return pdf;
-}
-
-async function renderPage(
+function renderPage(
   pageWidth: number,
   pageHeight: number,
   placements: Placement[],
   frameWidth: number | null,
   captionMargin: number,
-): Promise<Uint8Array<ArrayBuffer>> {
+): PdfwriteJob {
   const span = perf.span("pdfwrite.renderPage_ms");
   const inputFiles: Record<string, Uint8Array<ArrayBuffer>> = {};
   const ps = [`/pageWidth ${num(pageWidth)} def`];
@@ -175,14 +145,8 @@ async function renderPage(
   });
   ps.push("showpage");
   inputFiles["page.ps"] = new TextEncoder().encode(ps.join("\n"));
-
-  const pdf = await pdfwrite(
-    ["-dALLOWPSTRANSPARENCY", "page.ps"],
-    inputFiles,
-    Object.values(inputFiles).map((bytes) => bytes.buffer),
-  );
   span.stop();
-  return pdf;
+  return { args: ["-dALLOWPSTRANSPARENCY", "page.ps"], inputFiles };
 }
 
 export function renderDiffPage(diff: Bitmap, dpi: number) {
@@ -241,38 +205,91 @@ export function renderSideBySidePage(
   return renderPage(x, rowHeight + captionBand + margin * 2, placements, mmToPt(FRAME_MM), margin);
 }
 
-export class PdfBuilder {
+type PdfwriteWorker = WorkerHandle<PdfwriteMessage, PdfMessage>;
+
+async function pdfwrite(
+  worker: PdfwriteWorker,
+  job: PdfwriteJob,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const inputFiles: Record<string, ArrayBuffer> = {};
+  for (const [name, bytes] of Object.entries(job.inputFiles)) {
+    inputFiles[name] =
+      bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+        ? bytes.buffer
+        : sliceBackingBuffer(bytes);
+  }
+  const msg: PdfwriteMessage = { type: "pdfwrite", args: job.args, inputFiles };
+  const { data } = await worker.request<PdfMessage>(msg, Object.values(inputFiles));
+  return new Uint8Array(data);
+}
+
+class PdfwritePool {
   private readonly concurrency: number;
-  private readonly pages: Promise<Uint8Array<ArrayBuffer>>[] = [];
-  private readonly waiting: Array<() => void> = [];
-  private inFlight = 0;
+  private readonly workers: PdfwriteWorker[] = [];
+  private readonly idle: PdfwriteWorker[] = [];
+  private readonly waiting: Array<(w: PdfwriteWorker) => void> = [];
 
   constructor(concurrency: number) {
-    this.concurrency = concurrency;
+    this.concurrency = Math.max(1, concurrency);
   }
 
-  async add(render: () => Promise<Uint8Array<ArrayBuffer>>) {
-    if (this.inFlight >= this.concurrency) {
-      await new Promise<void>((resolve) => this.waiting.push(resolve));
+  acquire(): Promise<PdfwriteWorker> {
+    const idle = this.idle.pop();
+    if (idle) return Promise.resolve(idle);
+    if (this.workers.length < this.concurrency) {
+      const w: PdfwriteWorker = new WorkerHandle(workerUrl("pdfwrite-worker"));
+      this.workers.push(w);
+      return Promise.resolve(w);
     }
-    this.inFlight++;
-    const page = render().finally(() => {
-      this.inFlight--;
-      this.waiting.shift()?.();
-    });
+    return new Promise<PdfwriteWorker>((resolve) => this.waiting.push(resolve));
+  }
+
+  release(w: PdfwriteWorker) {
+    const next = this.waiting.shift();
+    if (next) next(w);
+    else this.idle.push(w);
+  }
+
+  terminate() {
+    for (const w of this.workers) w.terminate();
+  }
+}
+
+export class PdfBuilder {
+  private readonly pool: PdfwritePool;
+  private readonly pages: Promise<Uint8Array<ArrayBuffer>>[] = [];
+
+  constructor(concurrency: number) {
+    this.pool = new PdfwritePool(concurrency);
+  }
+
+  async add(render: () => PdfwriteJob | Promise<PdfwriteJob>) {
+    const worker = await this.pool.acquire();
+    const page = (async () => {
+      try {
+        return await pdfwrite(worker, await render());
+      } finally {
+        this.pool.release(worker);
+      }
+    })();
     page.catch(() => {});
     this.pages.push(page);
   }
 
   async finish(): Promise<Uint8Array<ArrayBuffer> | null> {
-    const pdfs = await Promise.all(this.pages);
-    if (pdfs.length === 0) {
-      return null;
+    try {
+      const pdfs = await Promise.all(this.pages);
+      if (pdfs.length === 0) {
+        return null;
+      }
+      const span = perf.span("pdfwrite.concat_ms");
+      const inputFiles = Object.fromEntries(pdfs.map((pdf, i) => [`${i}.pdf`, pdf]));
+      const worker = await this.pool.acquire();
+      const pdf = await pdfwrite(worker, { args: Object.keys(inputFiles), inputFiles });
+      span.stop();
+      return pdf;
+    } finally {
+      this.pool.terminate();
     }
-    const span = perf.span("pdfwrite.concat_ms");
-    const inputFiles = Object.fromEntries(pdfs.map((pdf, i) => [`${i}.pdf`, pdf]));
-    const pdf = await pdfwrite(Object.keys(inputFiles), inputFiles, []);
-    span.stop();
-    return pdf;
   }
 }

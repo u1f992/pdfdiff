@@ -1,30 +1,23 @@
 import * as jimp from "jimp";
-import Worker from "web-worker";
 
 import { type Pallet } from "./diff.ts";
 import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
-import { countPages, renderPageRangePng } from "./pdf.ts";
 import {
   PdfBuilder,
   renderDiffPage,
   renderSideBySidePage,
   type Bitmap,
   type DiffCounts,
+  type PdfwriteJob,
 } from "./pdfwrite.ts";
 import { perf } from "./perf.ts";
 import { parseHex, formatHex } from "./rgba-color.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
 import { VERSION } from "./version.ts";
 import type { JimpInstance } from "./jimp.ts";
-import type {
-  ErrorMessage,
-  InitMessage,
-  LoadedMessage,
-  PageMessage,
-  PageResultMessage,
-  ReadyMessage,
-} from "./worker.ts";
+import { WorkerHandle, workerUrl } from "./worker-handle.ts";
+import type { InitMessage, PageMessage, PageResultMessage, ReadyMessage } from "./worker.ts";
 
 export {
   withIndex,
@@ -39,6 +32,7 @@ export {
   type Bitmap,
   type DiffCounts,
   type Pallet,
+  type PdfwriteJob,
 };
 
 type Options = {
@@ -81,87 +75,7 @@ export const defaultOptions: Options = {
   workers: defaultWorkers,
 };
 
-type WorkerResponse = LoadedMessage | ReadyMessage | PageResultMessage | ErrorMessage;
-
-class WorkerHandle {
-  worker: InstanceType<typeof Worker>;
-  private loaded: Promise<void>;
-  private pendingResolve: ((data: WorkerResponse) => void) | null = null;
-  private pendingReject: ((reason: unknown) => void) | null = null;
-
-  constructor(url: URL) {
-    this.worker = new Worker(url, { type: "module" });
-    this.loaded = new Promise<void>((resolveLoaded, rejectLoaded) => {
-      const onMessage = (e: MessageEvent<WorkerResponse>) => {
-        const data = e.data;
-        if (data.type === "loaded") {
-          resolveLoaded();
-          return;
-        }
-        const resolve = this.pendingResolve;
-        const reject = this.pendingReject;
-        this.pendingResolve = null;
-        this.pendingReject = null;
-        if (data.type === "error") {
-          reject?.(new Error(`worker: ${data.message}`));
-        } else {
-          resolve?.(data);
-        }
-      };
-      this.worker.addEventListener("message", onMessage);
-      this.worker.addEventListener("error", (e: ErrorEvent) => {
-        const err = e.error ?? new Error(e.message);
-        rejectLoaded(err);
-        const reject = this.pendingReject;
-        this.pendingResolve = null;
-        this.pendingReject = null;
-        reject?.(err);
-      });
-    });
-  }
-
-  async init(msg: InitMessage): Promise<ReadyMessage> {
-    await this.loaded;
-    return new Promise<ReadyMessage>((resolve, reject) => {
-      this.pendingResolve = resolve as (data: WorkerResponse) => void;
-      this.pendingReject = reject;
-      this.worker.postMessage(msg);
-    });
-  }
-
-  processDiff(
-    index: number,
-    a: Uint8Array<ArrayBuffer> | null,
-    b: Uint8Array<ArrayBuffer> | null,
-    mask: Uint8Array<ArrayBuffer> | null,
-  ): Promise<PageResultMessage> {
-    return new Promise<PageResultMessage>((resolve, reject) => {
-      this.pendingResolve = resolve as (data: WorkerResponse) => void;
-      this.pendingReject = reject;
-      const aBuf = a !== null ? sliceBackingBuffer(a) : null;
-      const bBuf = b !== null ? sliceBackingBuffer(b) : null;
-      const maskBuf = mask !== null ? sliceBackingBuffer(mask) : null;
-      const msg: PageMessage = {
-        type: "page",
-        index,
-        a: aBuf,
-        b: bBuf,
-        mask: maskBuf,
-      };
-      const transfer = [aBuf, bBuf, maskBuf].filter((buf): buf is ArrayBuffer => buf !== null);
-      this.worker.postMessage(msg, transfer);
-    });
-  }
-
-  terminate() {
-    this.worker.terminate();
-  }
-}
-
-function workerUrl(): URL {
-  const file = import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js";
-  return new URL(`${file}?v=${encodeURIComponent(VERSION)}`, import.meta.url);
-}
+type DiffWorker = WorkerHandle<InitMessage | PageMessage, ReadyMessage | PageResultMessage>;
 
 function unpackCoords(buf: ArrayBuffer): [number, number][] {
   const arr = new Int32Array(buf);
@@ -218,122 +132,40 @@ export async function* visualizeDifferences(
     workers: options?.workers ?? defaultOptions.workers,
   };
 
-  const [aPages, bPages, maskPages] = await Promise.all([
-    countPages(a),
-    countPages(b),
-    typeof merged.mask !== "undefined" ? countPages(merged.mask) : Promise.resolve(0),
-  ]);
-  const maxPages = Math.max(aPages, bPages, maskPages);
-
-  if (maxPages === 0) return;
-
-  const mask = merged.mask;
-  const hasMask = typeof mask !== "undefined" && maskPages > 0;
-  const numDocs = hasMask ? 3 : 2;
-
   const initMsg: InitMessage = {
     type: "init",
     pallet: merged.pallet,
     align: merged.align,
+    dpi: merged.dpi,
+    alpha: merged.alpha,
+    a: sliceBackingBuffer(a),
+    b: sliceBackingBuffer(b),
+    mask: typeof merged.mask !== "undefined" ? sliceBackingBuffer(merged.mask) : null,
   };
 
-  const N = Math.max(1, Math.min(merged.workers, maxPages));
-  const url = workerUrl();
-  const workers: WorkerHandle[] = [];
-  for (let i = 0; i < N; i++) {
-    const w = new WorkerHandle(url);
-    await w.init(initMsg);
-    workers.push(w);
-  }
-
-  let aborted: unknown = null;
-
-  // One PNG slot per page per document, fulfilled as render chunks complete.
-  // Pages past a document's page count resolve to null (an empty/transparent
-  // page). The defensive catch keeps a chunk failure from surfacing as an
-  // unhandled rejection before a diff lane awaits the slot.
-  type Slot = {
-    p: Promise<Uint8Array<ArrayBuffer> | null>;
-    resolve: (v: Uint8Array<ArrayBuffer> | null) => void;
-    reject: (e: unknown) => void;
-  };
-  const makeSlots = (count: number): Slot[] =>
-    Array.from({ length: maxPages }, (_, i) => {
-      if (i >= count) {
-        return {
-          p: Promise.resolve(null),
-          resolve: () => {},
-          reject: () => {},
-        };
-      }
-      let resolve!: (v: Uint8Array<ArrayBuffer> | null) => void;
-      let reject!: (e: unknown) => void;
-      const p = new Promise<Uint8Array<ArrayBuffer> | null>((res, rej) => {
-        resolve = res;
-        reject = rej;
-      });
-      p.catch(() => {});
-      return { p, resolve, reject };
-    });
-  const slots = {
-    a: makeSlots(aPages),
-    b: makeSlots(bPages),
-    mask: makeSlots(hasMask ? maskPages : 0),
-  };
-
-  // Render chunk tasks: batch several pages per gs() call to amortize startup,
-  // interleaving A/B/mask by page range so the early pages of every document
-  // become available together (which keeps the diff stage fed).
-  // Render concurrency. Aim for ~2x as many chunks as render slots so pages
-  // arrive in waves and the diff/decode stage overlaps later renders instead of
-  // waiting for one big batch. A floor keeps each chunk large enough to amortize
-  // Ghostscript's per-call startup: when there are many slots relative to pages,
-  // the slots are already saturated, so batching beats finer streaming.
-  const MIN_CHUNK = 4;
-  const R = Math.max(merged.workers, numDocs);
-  const totalRenderPages = aPages + bPages + (hasMask ? maskPages : 0);
-  const chunkSize = Math.max(
-    1,
-    Math.min(maxPages, Math.max(MIN_CHUNK, Math.ceil(totalRenderPages / (2 * R)))),
+  const url = workerUrl("worker");
+  const spawned: DiffWorker[] = Array.from(
+    { length: Math.max(1, merged.workers) },
+    () => new WorkerHandle(url),
   );
-  type Task = { bytes: Uint8Array; start: number; end: number; slots: Slot[] };
-  const tasks: Task[] = [];
-  const pushChunk = (
-    bytes: Uint8Array | undefined,
-    count: number,
-    target: Slot[],
-    start: number,
-  ) => {
-    if (bytes === undefined || start >= count) return;
-    tasks.push({
-      bytes,
-      start,
-      end: Math.min(start + chunkSize, count) - 1,
-      slots: target,
-    });
-  };
-  for (let start = 0; start < maxPages; start += chunkSize) {
-    pushChunk(a, aPages, slots.a, start);
-    pushChunk(b, bPages, slots.b, start);
-    if (hasMask) pushChunk(mask, maskPages, slots.mask, start);
+  try {
+    const sInit = perf.span("main.workersInit_ms");
+    const readies = await Promise.all(spawned.map((w) => w.request<ReadyMessage>(initMsg)));
+    sInit.stop();
+    const pages = readies[0]!.pages;
+    const maxPages = Math.max(pages.a, pages.b, pages.mask);
+    if (maxPages === 0) return;
+
+    const workers = spawned.slice(0, maxPages);
+    for (const w of spawned.slice(maxPages)) w.terminate();
+
+    yield* diffPages(workers, maxPages);
+  } finally {
+    for (const w of spawned) w.terminate();
   }
+}
 
-  let taskIdx = 0;
-  const renderLoops = Array.from({ length: Math.min(R, tasks.length) }, async () => {
-    while (taskIdx < tasks.length && aborted === null) {
-      const t = tasks[taskIdx++]!;
-      try {
-        const pngs = await renderPageRangePng(t.bytes, t.start, t.end, merged.dpi, merged.alpha);
-        for (let i = t.start; i <= t.end; i++) {
-          t.slots[i]!.resolve(pngs.get(i) ?? null);
-        }
-      } catch (e) {
-        aborted = e;
-        for (let i = t.start; i <= t.end; i++) t.slots[i]!.reject(e);
-      }
-    }
-  });
-
+async function* diffPages(workers: DiffWorker[], maxPages: number) {
   const buffered = new Map<number, Result>();
   let nextToAssign = 0;
   const resolvers = new Map<number, (r: Result) => void>();
@@ -343,12 +175,8 @@ export async function* visualizeDifferences(
     while (nextToAssign < maxPages && workerError === null) {
       const idx = nextToAssign++;
       try {
-        const [aPng, bPng, maskPng] = await Promise.all([
-          slots.a[idx]!.p,
-          slots.b[idx]!.p,
-          slots.mask[idx]!.p,
-        ]);
-        const msg = await w.processDiff(idx, aPng, bPng, maskPng);
+        const pageMsg: PageMessage = { type: "page", index: idx };
+        const msg = await w.request<PageResultMessage>(pageMsg);
         const result = pageResultToResult(msg);
         const resolve = resolvers.get(idx);
         if (resolve) {
@@ -360,7 +188,6 @@ export async function* visualizeDifferences(
         }
       } catch (e) {
         workerError = e;
-        aborted = e;
         for (const [, resolve] of resolvers) resolve(null as never);
         resolvers.clear();
         return;
@@ -368,29 +195,22 @@ export async function* visualizeDifferences(
     }
   });
 
-  try {
-    for (let i = 0; i < maxPages; i++) {
+  for (let i = 0; i < maxPages; i++) {
+    if (workerError !== null) throw workerError;
+    let r: Result;
+    const buf = buffered.get(i);
+    if (buf !== undefined) {
+      buffered.delete(i);
+      r = buf;
+    } else {
+      const sWait = perf.span("main.yieldWaitMain_ms");
+      r = await new Promise<Result>((resolve) => resolvers.set(i, resolve));
+      sWait.stop();
       if (workerError !== null) throw workerError;
-      let r: Result;
-      const buf = buffered.get(i);
-      if (buf !== undefined) {
-        buffered.delete(i);
-        r = buf;
-      } else {
-        const sWait = perf.span("main.yieldWaitMain_ms");
-        r = await new Promise<Result>((resolve) => resolvers.set(i, resolve));
-        sWait.stop();
-        if (workerError !== null) throw workerError;
-      }
-      const sYield = perf.span("main.consumerTime_ms");
-      yield r;
-      sYield.stop();
     }
-    await Promise.all(diffLoops);
-    await Promise.all(renderLoops);
-  } finally {
-    aborted = aborted ?? new Error("aborted");
-    await Promise.allSettled(renderLoops);
-    for (const w of workers) w.terminate();
+    const sYield = perf.span("main.consumerTime_ms");
+    yield r;
+    sYield.stop();
   }
+  await Promise.all(diffLoops);
 }

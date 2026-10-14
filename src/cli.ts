@@ -18,6 +18,7 @@ import {
   renderDiffPage,
   renderSideBySidePage,
   type DiffCounts,
+  type PdfwriteJob,
 } from "./index.ts";
 import type { JimpInstance } from "./jimp.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
@@ -135,7 +136,7 @@ function directoryOutput(outDir: string, workers: number): Output {
 function pdfOutput(
   outPath: string,
   concurrency: number,
-  render: (page: Page) => Promise<Uint8Array<ArrayBuffer>>,
+  render: (page: Page) => PdfwriteJob,
 ): Output {
   const builder = new PdfBuilder(concurrency);
   return {
@@ -238,13 +239,15 @@ EXIT STATUS:
     2    error
 
 NOTES:
-    Pages are rendered with Ghostscript (gs-wasm). Each page render spins up a
-    transient Ghostscript instance (~26 MB WASM binary plus a rasterization
-    working set that grows with --dpi). A and B (and the mask) render
-    concurrently, and --workers controls how many pages are rendered and diffed
-    in parallel, so peak memory scales with both --workers and --dpi. Each
-    in-flight page additionally holds decoded RGBA bitmaps of ~width*height*4
-    bytes. --workers defaults to the CPU core count (capped at 4); lower it to
+    Pages are rendered with Ghostscript (gs-wasm). Each of the --workers
+    workers loads its own Ghostscript (a 20 MB WASM binary, roughly 150 MB
+    of memory once loaded) and keeps one instance alive for the whole run,
+    rendering and diffing one page at a time with a rasterization working
+    set that grows with --dpi. The PDF output types write pages through a
+    second pool of up to --workers Ghostscript loads running pdfwrite, so
+    peak memory scales with --workers and --dpi. Each in-flight page
+    additionally holds decoded RGBA bitmaps of ~width*height*4 bytes.
+    --workers defaults to the CPU core count (capped at 4); lower it to
     reduce memory, or raise it for large jobs on big machines. Keep the total
     under ~80% of available memory.
 `);

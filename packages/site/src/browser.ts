@@ -69,7 +69,7 @@ function saveFile(bytes: Uint8Array<ArrayBuffer>, type: string, filename: string
 async function buildPdf(
   pages: ResultPage[],
   result: Result,
-  render: (pngs: ResultPage, result: Result) => Promise<Uint8Array<ArrayBuffer>>,
+  render: (pngs: ResultPage, result: Result) => Promise<pdfdiff.PdfwriteJob>,
 ) {
   const builder = new pdfdiff.PdfBuilder(result.workers);
   for (const page of pages) {

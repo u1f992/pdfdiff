@@ -2,33 +2,34 @@ import { decodePng } from "./decode.ts";
 import { type Pallet } from "./diff.ts";
 import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
 import type { JimpInstance } from "./jimp.ts";
+import { PdfRenderer, type DocumentName } from "./pdf.ts";
 import { perf, type Counters } from "./perf.ts";
 import { type RGBAColor } from "./rgba-color.ts";
 import { sliceBackingBuffer } from "./transferable.ts";
 import createWasmModule, { type MainModule } from "./wasm/core.js";
+import type { ErrorMessage } from "./worker-handle.ts";
 
 export type InitMessage = {
   type: "init";
   pallet: Pallet;
   align: AlignStrategy;
+  dpi: number;
+  alpha: boolean;
+  a: ArrayBufferLike;
+  b: ArrayBufferLike;
+  mask: ArrayBufferLike | null;
 };
+
+export type PageCounts = Record<DocumentName, number>;
 
 export type PageMessage = {
   type: "page";
   index: number;
-  // PNG bytes rendered on the main thread, or null when the source PDF has no
-  // such page (the diff then treats it as an empty/transparent page).
-  a: ArrayBuffer | null;
-  b: ArrayBuffer | null;
-  mask: ArrayBuffer | null;
-};
-
-export type LoadedMessage = {
-  type: "loaded";
 };
 
 export type ReadyMessage = {
   type: "ready";
+  pages: PageCounts;
 };
 
 export type PageResultMessage = {
@@ -43,11 +44,6 @@ export type PageResultMessage = {
   perf?: Counters | undefined;
 };
 
-export type ErrorMessage = {
-  type: "error";
-  message: string;
-};
-
 type WasmProcessResult = {
   overlay: Uint8Array<ArrayBuffer>;
   addition: Int32Array<ArrayBuffer>;
@@ -58,6 +54,8 @@ type WasmProcessResult = {
 let opts: {
   pallet: Pallet;
   align: AlignStrategy;
+  renderer: PdfRenderer;
+  pages: PageCounts;
 };
 
 let wasm: MainModule | null = null;
@@ -70,15 +68,41 @@ function packColor([r, g, b, a]: RGBAColor): number {
   return ((r << 24) | (g << 16) | (b << 8) | a) >>> 0;
 }
 
+async function init(msg: InitMessage): Promise<ReadyMessage> {
+  const documents: Partial<Record<DocumentName, Uint8Array>> = {
+    a: new Uint8Array(msg.a),
+    b: new Uint8Array(msg.b),
+  };
+  if (msg.mask !== null) documents.mask = new Uint8Array(msg.mask);
+  const [renderer] = await Promise.all([
+    PdfRenderer.create(documents, msg.dpi, msg.alpha),
+    getWasm(),
+  ]);
+  const pages: PageCounts = {
+    a: await renderer.countPages("a"),
+    b: await renderer.countPages("b"),
+    mask: msg.mask !== null ? await renderer.countPages("mask") : 0,
+  };
+  opts = { pallet: msg.pallet, align: msg.align, renderer, pages };
+  return { type: "ready", pages };
+}
+
+async function renderOrNull(name: DocumentName, index: number): Promise<JimpInstance | null> {
+  if (index >= opts.pages[name]) return null;
+  const png = await opts.renderer.renderPage(name, index);
+  const sDecode = perf.span("worker.decode_ms");
+  const image = await decodePng(png.buffer);
+  sDecode.stop();
+  return image;
+}
+
 async function processPage(msg: PageMessage): Promise<PageResultMessage> {
   const index = msg.index;
-  const sLoad = perf.span("worker.decodeAll_ms");
-  const [pageA, pageB, pageMaskOrNull] = (await Promise.all([
-    msg.a !== null ? decodePng(msg.a) : createEmptyImage(1, 1),
-    msg.b !== null ? decodePng(msg.b) : createEmptyImage(1, 1),
-    msg.mask !== null ? decodePng(msg.mask) : Promise.resolve(null),
-  ])) as [JimpInstance, JimpInstance, JimpInstance | null];
-  sLoad.stop();
+  const sRender = perf.span("worker.renderAll_ms");
+  const pageA = (await renderOrNull("a", index)) ?? createEmptyImage(1, 1);
+  const pageB = (await renderOrNull("b", index)) ?? createEmptyImage(1, 1);
+  const pageMaskOrNull = await renderOrNull("mask", index);
+  sRender.stop();
 
   const sAlign = perf.span("worker.alignSize_ms");
   let aAligned: JimpInstance;
@@ -148,13 +172,7 @@ self.addEventListener("message", async (e: MessageEvent<InitMessage | PageMessag
   try {
     const msg = e.data;
     if (msg.type === "init") {
-      opts = {
-        pallet: msg.pallet,
-        align: msg.align,
-      };
-      await getWasm();
-      const ready: ReadyMessage = { type: "ready" };
-      self.postMessage(ready);
+      self.postMessage(await init(msg));
     } else if (msg.type === "page") {
       const result = await processPage(msg);
       self.postMessage(result, [
@@ -174,6 +192,3 @@ self.addEventListener("message", async (e: MessageEvent<InitMessage | PageMessag
     self.postMessage(errorMsg);
   }
 });
-
-const loaded: LoadedMessage = { type: "loaded" };
-self.postMessage(loaded);

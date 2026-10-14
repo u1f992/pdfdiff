@@ -1,111 +1,146 @@
-import { gs } from "@u1f992/gs-wasm";
+import createModule, { type Instance, type MainModule } from "@u1f992/gs-wasm";
 
+import { gsCall } from "./gs.ts";
 import { perf } from "./perf.ts";
 
-/*
- * Pages are rendered with Ghostscript (gs-wasm). Each gs() invocation spins up
- * its own worker and Ghostscript instance, so we render one page per call and
- * let the caller drive concurrency (e.g. by rendering A/B/mask together and by
- * running multiple page workers).
- *
- * Ghostscript (via the `web-worker` package) must be invoked from a context
- * that can itself spawn a worker. In Node's `web-worker` this is only the main
- * thread, so rendering happens on the main thread and the resulting PNG bytes
- * are handed off to the diff workers for decoding. The PDF is placed in
- * Ghostscript's in-memory FS as `input.pdf` and the page is read back as a PNG.
- */
-const INPUT_VM_PATH = "input.pdf";
+const INPUT_DIR = "/input";
+const OUTPUT_DIR = "/output";
 
-/**
- * Count the pages of a PDF using Ghostscript's `pdfpagecount`. Runs with
- * `-dNODISPLAY` (no rendering) so it is cheap relative to a page render.
- */
-export async function countPages(pdf: Uint8Array): Promise<number> {
-  const span = perf.span("pdf.countPages_ms");
-  const out: number[] = [];
-  const { exitCode } = await gs({
-    args: [
-      "-q",
-      "-dNODISPLAY",
-      "-dNOSAFER",
-      "-c",
-      `(${INPUT_VM_PATH}) (r) file runpdfbegin pdfpagecount = quit`,
-    ],
-    inputFiles: { [INPUT_VM_PATH]: pdf },
-    onStdout: (charCode) => {
-      if (charCode !== null) out.push(charCode);
-    },
-  });
-  span.stop();
-  if (exitCode !== 0) {
-    throw new Error(`gs countPages failed (exit ${exitCode})`);
+export type DocumentName = "a" | "b" | "mask";
+
+export class PdfRenderer {
+  private readonly gs: MainModule;
+  private readonly instance: Instance;
+  private readonly takeOutput: () => string;
+
+  private constructor(gs: MainModule, instance: Instance, takeOutput: () => string) {
+    this.gs = gs;
+    this.instance = instance;
+    this.takeOutput = takeOutput;
   }
-  const text = String.fromCharCode(...out).trim();
-  const n = Number.parseInt(text, 10);
-  if (!Number.isFinite(n) || n < 0) {
-    throw new Error(`gs countPages: unexpected output ${JSON.stringify(text)}`);
+
+  static async create(
+    documents: Partial<Record<DocumentName, Uint8Array>>,
+    dpi: number,
+    alpha: boolean,
+  ): Promise<PdfRenderer> {
+    const sLoad = perf.span("pdf.loadModule_ms");
+    const gs = await createModule();
+    sLoad.stop();
+
+    gs.FS.mkdir(INPUT_DIR);
+    gs.FS.mkdir(OUTPUT_DIR);
+    for (const [name, bytes] of Object.entries(documents)) {
+      gs.FS.writeFile(inputPath(name as DocumentName), bytes);
+    }
+
+    const decoder = new TextDecoder();
+    let output = "";
+    const capture = (buf: Uint8Array) => {
+      output += decoder.decode(buf, { stream: true });
+      return buf.length;
+    };
+    const takeOutput = () => {
+      const text = output;
+      output = "";
+      return text;
+    };
+
+    const instance = new gs.Instance();
+    instance.setStdio(null, capture, capture);
+    const sInit = perf.span("pdf.gsInit_ms");
+    const code = await gsCall(() =>
+      instance.initWithArgs([
+        "gs",
+        "-dQUIET",
+        "-dNOPAUSE",
+        `--permit-file-read=${INPUT_DIR}/`,
+        `-sDEVICE=${alpha ? "pngalpha" : "png16m"}`,
+        `-r${dpi}`,
+        "-dTextAlphaBits=4",
+        "-dGraphicsAlphaBits=4",
+        `-sOutputFile=${OUTPUT_DIR}/%d.png`,
+      ]),
+    );
+    sInit.stop();
+    if (code !== 0) {
+      instance.delete();
+      throw new Error(`gs init failed (code ${code})\n${takeOutput()}`);
+    }
+    const renderer = new PdfRenderer(gs, instance, takeOutput);
+    try {
+      const sOpen = perf.span("pdf.openDocuments_ms");
+      for (const name of Object.keys(documents) as DocumentName[]) {
+        await renderer.run(
+          `(${inputPath(name)}) (r) file runpdfbegin currentdict end /${documentDict(name)} exch def`,
+          `open(${name})`,
+        );
+      }
+      sOpen.stop();
+    } catch (error) {
+      renderer.delete();
+      throw error;
+    }
+    return renderer;
   }
-  return n;
+
+  async countPages(name: DocumentName): Promise<number> {
+    const span = perf.span("pdf.countPages_ms");
+    const text = await this.run(
+      `${documentDict(name)} begin pdfpagecount end = flush`,
+      `countPages(${name})`,
+    );
+    span.stop();
+    const n = Number.parseInt(text.trim(), 10);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new Error(`gs countPages(${name}): unexpected output ${JSON.stringify(text)}`);
+    }
+    return n;
+  }
+
+  async renderPage(name: DocumentName, index: number): Promise<Uint8Array<ArrayBuffer>> {
+    const span = perf.span("pdf.gsRender_ms");
+    const page = index + 1;
+    const output = await this.run(
+      `${documentDict(name)} begin ${page} pdfgetpage pdfshowpage end`,
+      `render(${name}, page ${page})`,
+    );
+    span.stop();
+    const files = this.listOutputFiles();
+    if (files.length !== 1) {
+      throw new Error(
+        `gs render(${name}, page ${page}) produced ${files.length} files, expected 1\n${output}`,
+      );
+    }
+    const path = `${OUTPUT_DIR}/${files[0]}`;
+    const png = this.gs.FS.readFile(path) as Uint8Array<ArrayBuffer>;
+    this.gs.FS.unlink(path);
+    perf.incr("pdf.pagesRendered");
+    return png;
+  }
+
+  delete() {
+    this.instance.delete();
+  }
+
+  private async run(program: string, what: string): Promise<string> {
+    const { code } = await this.instance.runString(program, 0);
+    const output = this.takeOutput();
+    if (code !== 0) {
+      throw new Error(`gs ${what} failed (code ${code})\n${output}`);
+    }
+    return output;
+  }
+
+  private listOutputFiles(): string[] {
+    return (this.gs.FS.readdir(OUTPUT_DIR) as string[]).filter((entry) => !entry.startsWith("."));
+  }
 }
 
-/**
- * Render an inclusive range of (0-based) pages of a PDF to PNG bytes in a single
- * Ghostscript invocation, returning a map keyed by 0-based page index. Batching
- * several pages per call amortizes Ghostscript's startup and PDF parsing, which
- * dominate a single-page render. `alpha` selects the device: `pngalpha` keeps
- * the page background transparent (so the diff can tell "no content" from
- * "content" via the alpha channel), while `png16m` renders opaque. Decoding to
- * RGBA is left to the caller (the diff workers) so it can run off this thread.
- */
-export async function renderPageRangePng(
-  pdf: Uint8Array,
-  firstIndex: number,
-  lastIndex: number,
-  dpi: number,
-  alpha: boolean,
-): Promise<Map<number, Uint8Array<ArrayBuffer>>> {
-  const device = alpha ? "pngalpha" : "png16m";
-  const first = firstIndex + 1; // Ghostscript page numbers are 1-based.
-  const last = lastIndex + 1;
+function inputPath(name: DocumentName): string {
+  return `${INPUT_DIR}/${name}.pdf`;
+}
 
-  // `%d` in the output pattern is the 1-based index of the page *within this
-  // run* (it restarts at 1 regardless of -dFirstPage), so the k-th output maps
-  // back to absolute page (first + k - 1).
-  const pageCount = last - first + 1;
-  const names: string[] = [];
-  for (let k = 1; k <= pageCount; k++) names.push(`out-${k}.png`);
-
-  const sRender = perf.span("pdf.gsRender_ms");
-  const { exitCode, outputFiles } = await gs({
-    args: [
-      "-dNOPAUSE",
-      "-dBATCH",
-      "-dQUIET",
-      `-dFirstPage=${first}`,
-      `-dLastPage=${last}`,
-      `-sDEVICE=${device}`,
-      `-r${dpi}`,
-      "-dTextAlphaBits=4",
-      "-dGraphicsAlphaBits=4",
-      "-sOutputFile=out-%d.png",
-      INPUT_VM_PATH,
-    ],
-    inputFiles: { [INPUT_VM_PATH]: pdf },
-    outputFilePaths: names,
-  });
-  sRender.stop();
-  if (exitCode !== 0) {
-    throw new Error(`gs render failed (pages ${first}-${last}, exit ${exitCode})`);
-  }
-  const result = new Map<number, Uint8Array<ArrayBuffer>>();
-  for (let k = 1; k <= pageCount; k++) {
-    const png = outputFiles[`out-${k}.png`];
-    if (!png) {
-      throw new Error(`gs render produced no output (page ${first + k - 1})`);
-    }
-    result.set(firstIndex + (k - 1), png);
-  }
-  perf.incr("pdf.gsCalls");
-  perf.incr("pdf.pagesRendered", pageCount);
-  return result;
+function documentDict(name: DocumentName): string {
+  return `pdfdiff_${name}`;
 }
