@@ -61,6 +61,10 @@ async function openForm(a: string, b: string): Promise<Page> {
   return page;
 }
 
+async function openOptions(page: Page) {
+  await page.click("#options > summary");
+}
+
 async function submitAndDownload(page: Page) {
   const downloaded = page.waitForEvent("download", { timeout: 120_000 });
   await page.click("#submit");
@@ -78,6 +82,7 @@ void test("shows the library version", async () => {
 
 void test("a-b-diff-pdf downloads a PDF", async () => {
   const page = await openForm("a.pdf", "b.pdf");
+  await openOptions(page);
   await page.setInputFiles("#pdf-mask", path.join(fixtures, "mask.pdf"));
   const { filename, bytes } = await submitAndDownload(page);
   assert.equal(filename, "pdfdiff-a-b-diff.pdf");
@@ -87,6 +92,7 @@ void test("a-b-diff-pdf downloads a PDF", async () => {
 
 void test("zip downloads the page images", async () => {
   const page = await openForm("a.pdf", "b.pdf");
+  await openOptions(page);
   await page.selectOption("#out-type", "zip");
   const { filename, bytes } = await submitAndDownload(page);
   assert.equal(filename, "pdfdiff-result.zip");
@@ -100,6 +106,7 @@ void test("zip downloads the page images", async () => {
 
 void test("diff-only with identical inputs outputs nothing", async () => {
   const page = await openForm("a.pdf", "a.pdf");
+  await openOptions(page);
   await page.check("#diff-only");
   await page.click("#submit");
   await page.getByText("No page was output.").waitFor({ timeout: 120_000 });
