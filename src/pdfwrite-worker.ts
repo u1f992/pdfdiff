@@ -31,6 +31,8 @@ const PDFWRITE_ARGS = [
   "-dGrayImageFilter=/FlateEncode",
   "-dDownsampleColorImages=false",
   "-dDownsampleGrayImages=false",
+  "-dWriteObjStms=false",
+  "-dWriteXRefStm=false",
   `-sOutputFile=${JOB_DIR}/${OUTPUT_NAME}`,
 ];
 

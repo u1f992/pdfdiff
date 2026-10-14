@@ -1,4 +1,5 @@
 import { type Pallet } from "./diff.ts";
+import { mergePdfs } from "./pdf-merge.ts";
 import type { PdfMessage, PdfwriteMessage } from "./pdfwrite-worker.ts";
 import { perf } from "./perf.ts";
 import { type RGBAColor } from "./rgba-color.ts";
@@ -282,10 +283,8 @@ export class PdfBuilder {
       if (pdfs.length === 0) {
         return null;
       }
-      const span = perf.span("pdfwrite.concat_ms");
-      const inputFiles = Object.fromEntries(pdfs.map((pdf, i) => [`${i}.pdf`, pdf]));
-      const worker = await this.pool.acquire();
-      const pdf = await pdfwrite(worker, { args: Object.keys(inputFiles), inputFiles });
+      const span = perf.span("pdfwrite.merge_ms");
+      const pdf = mergePdfs(pdfs);
       span.stop();
       return pdf;
     } finally {
