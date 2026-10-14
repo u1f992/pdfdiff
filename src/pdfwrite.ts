@@ -12,14 +12,14 @@ export type Bitmap = {
   data: Uint8Array | Uint8ClampedArray;
 };
 
-type LegendItem = {
+type CaptionDetail = {
   label: string;
   color: RGBAColor | null;
 };
 
 type Caption = {
   label: string;
-  legend: LegendItem[];
+  details: CaptionDetail[];
 };
 
 type Placement = {
@@ -42,11 +42,11 @@ const CAPTION_FONT = "NimbusSans-Regular";
 const NIMBUS_SANS_REGULAR_CAP_HEIGHT_EM = 0.729;
 const CAPTION_FONT_MM = 5;
 const CAPTION_GAP_MM = 2;
-const LEGEND_FONT_MM = 3.5;
-const LEGEND_INDENT_MM = 5;
-const LEGEND_SWATCH_MM = 2.5;
-const LEGEND_SWATCH_GAP_MM = 1;
-const LEGEND_ITEM_GAP_MM = 3;
+const DETAIL_FONT_MM = 3.5;
+const DETAIL_INDENT_MM = 5;
+const DETAIL_GAP_MM = 3;
+const SWATCH_MM = 2.5;
+const SWATCH_GAP_MM = 1;
 const PAGE_NUMBER_FONT_MM = 3.5;
 
 const mmToPt = (mm: number) => (mm * 72) / 25.4;
@@ -56,13 +56,13 @@ const psString = (s: string) => `(${s.replace(/[\\()]/g, "\\$&")})`;
 const setFontPs = (sizeMm: number) =>
   `/${CAPTION_FONT} findfont ${num(mmToPt(sizeMm))} scalefont setfont`;
 
-const legendItemGapMm = (i: number) => (i === 0 ? LEGEND_INDENT_MM : LEGEND_ITEM_GAP_MM);
-const legendSwatchAdvanceMm = ({ color }: LegendItem) =>
-  color !== null ? LEGEND_SWATCH_MM + LEGEND_SWATCH_GAP_MM : 0;
+const detailGapMm = (i: number) => (i === 0 ? DETAIL_INDENT_MM : DETAIL_GAP_MM);
+const swatchAdvanceMm = ({ color }: CaptionDetail) =>
+  color !== null ? SWATCH_MM + SWATCH_GAP_MM : 0;
 
-function captionRightEdgePs({ label, legend }: Caption, x: number) {
-  const fixed = legend.reduce(
-    (acc, item, i) => acc + mmToPt(legendItemGapMm(i) + legendSwatchAdvanceMm(item)),
+function captionRightEdgePs({ label, details }: Caption, x: number) {
+  const fixed = details.reduce(
+    (acc, detail, i) => acc + mmToPt(detailGapMm(i) + swatchAdvanceMm(detail)),
     x,
   );
   const textWidth = (s: string) => `${psString(s)} stringwidth pop add`;
@@ -70,29 +70,29 @@ function captionRightEdgePs({ label, legend }: Caption, x: number) {
     num(fixed),
     setFontPs(CAPTION_FONT_MM),
     textWidth(label),
-    setFontPs(LEGEND_FONT_MM),
-    ...legend.map((item) => textWidth(item.label)),
+    setFontPs(DETAIL_FONT_MM),
+    ...details.map((detail) => textWidth(detail.label)),
   ].join(" ");
 }
 
-function captionPs({ label, legend }: Caption, x: number, baseline: number) {
-  const swatch = num(mmToPt(LEGEND_SWATCH_MM));
+function captionPs({ label, details }: Caption, x: number, baseline: number) {
+  const swatch = num(mmToPt(SWATCH_MM));
   const ps = [
     `0 setgray ${setFontPs(CAPTION_FONT_MM)} ${num(x)} ${num(baseline)} moveto ${psString(label)} show`,
   ];
-  if (legend.length > 0) {
-    ps.push(setFontPs(LEGEND_FONT_MM));
+  if (details.length > 0) {
+    ps.push(setFontPs(DETAIL_FONT_MM));
   }
-  legend.forEach((item, i) => {
-    const parts = [`${num(mmToPt(legendItemGapMm(i)))} 0 rmoveto`];
-    if (item.color !== null) {
-      const [r, g, b, a] = item.color;
+  details.forEach((detail, i) => {
+    const parts = [`${num(mmToPt(detailGapMm(i)))} 0 rmoveto`];
+    if (detail.color !== null) {
+      const [r, g, b, a] = detail.color;
       const rgb = [r, g, b].map((c) => num(c / 255)).join(" ");
       parts.push(
-        `currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(legendSwatchAdvanceMm(item)))} 0 rmoveto`,
+        `currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(swatchAdvanceMm(detail)))} 0 rmoveto`,
       );
     }
-    parts.push(`${psString(item.label)} show`);
+    parts.push(`${psString(detail.label)} show`);
     ps.push(parts.join(" "));
   });
   return ps;
@@ -212,7 +212,7 @@ function captionedDiff(diff: Bitmap, pallet: Pallet, counts: DiffCounts): Captio
     image: diff,
     caption: {
       label: "Diff",
-      legend: [
+      details: [
         { label: `Addition: ${counts.addition}`, color: pallet.addition },
         { label: `Deletion: ${counts.deletion}`, color: pallet.deletion },
         { label: `Modification: ${counts.modification}`, color: pallet.modification },
@@ -245,8 +245,8 @@ export function renderSideBySidePage(
 ) {
   return renderRow(
     [
-      { image: a.image, caption: { label: "A", legend: [{ label: a.name, color: null }] } },
-      { image: b.image, caption: { label: "B", legend: [{ label: b.name, color: null }] } },
+      { image: a.image, caption: { label: "A", details: [{ label: a.name, color: null }] } },
+      { image: b.image, caption: { label: "B", details: [{ label: b.name, color: null }] } },
       captionedDiff(diff, pallet, counts),
     ],
     page,
