@@ -12,15 +12,12 @@ export type Bitmap = {
   data: Uint8Array | Uint8ClampedArray;
 };
 
-type CaptionDetail = {
+type CaptionItem = {
   label: string;
   color: RGBAColor | null;
 };
 
-type Caption = {
-  label: string;
-  details: CaptionDetail[];
-};
+type Caption = CaptionItem[];
 
 type Placement = {
   image: Bitmap;
@@ -40,11 +37,9 @@ const MARGIN_MM = 10;
 const FRAME_MM = 0.1;
 const CAPTION_FONT = "NimbusSans-Regular";
 const NIMBUS_SANS_REGULAR_CAP_HEIGHT_EM = 0.729;
-const CAPTION_FONT_MM = 5;
+const CAPTION_FONT_MM = 3.5;
 const CAPTION_GAP_MM = 2;
-const DETAIL_FONT_MM = 3.5;
-const DETAIL_INDENT_MM = 5;
-const DETAIL_GAP_MM = 3;
+const CAPTION_ITEM_GAP_MM = 3;
 const SWATCH_MM = 2.5;
 const SWATCH_GAP_MM = 1;
 const PAGE_NUMBER_FONT_MM = 3.5;
@@ -56,43 +51,35 @@ const psString = (s: string) => `(${s.replace(/[\\()]/g, "\\$&")})`;
 const setFontPs = (sizeMm: number) =>
   `/${CAPTION_FONT} findfont ${num(mmToPt(sizeMm))} scalefont setfont`;
 
-const detailGapMm = (i: number) => (i === 0 ? DETAIL_INDENT_MM : DETAIL_GAP_MM);
-const swatchAdvanceMm = ({ color }: CaptionDetail) =>
+const itemGapMm = (i: number) => (i === 0 ? 0 : CAPTION_ITEM_GAP_MM);
+const swatchAdvanceMm = ({ color }: CaptionItem) =>
   color !== null ? SWATCH_MM + SWATCH_GAP_MM : 0;
 
-function captionRightEdgePs({ label, details }: Caption, x: number) {
-  const fixed = details.reduce(
-    (acc, detail, i) => acc + mmToPt(detailGapMm(i) + swatchAdvanceMm(detail)),
+function captionRightEdgePs(caption: Caption, x: number) {
+  const fixed = caption.reduce(
+    (acc, item, i) => acc + mmToPt(itemGapMm(i) + swatchAdvanceMm(item)),
     x,
   );
-  const textWidth = (s: string) => `${psString(s)} stringwidth pop add`;
   return [
     num(fixed),
     setFontPs(CAPTION_FONT_MM),
-    textWidth(label),
-    setFontPs(DETAIL_FONT_MM),
-    ...details.map((detail) => textWidth(detail.label)),
+    ...caption.map((item) => `${psString(item.label)} stringwidth pop add`),
   ].join(" ");
 }
 
-function captionPs({ label, details }: Caption, x: number, baseline: number) {
+function captionPs(caption: Caption, x: number, baseline: number) {
   const swatch = num(mmToPt(SWATCH_MM));
-  const ps = [
-    `0 setgray ${setFontPs(CAPTION_FONT_MM)} ${num(x)} ${num(baseline)} moveto ${psString(label)} show`,
-  ];
-  if (details.length > 0) {
-    ps.push(setFontPs(DETAIL_FONT_MM));
-  }
-  details.forEach((detail, i) => {
-    const parts = [`${num(mmToPt(detailGapMm(i)))} 0 rmoveto`];
-    if (detail.color !== null) {
-      const [r, g, b, a] = detail.color;
+  const ps = [`0 setgray ${setFontPs(CAPTION_FONT_MM)} ${num(x)} ${num(baseline)} moveto`];
+  caption.forEach((item, i) => {
+    const parts = [`${num(mmToPt(itemGapMm(i)))} 0 rmoveto`];
+    if (item.color !== null) {
+      const [r, g, b, a] = item.color;
       const rgb = [r, g, b].map((c) => num(c / 255)).join(" ");
       parts.push(
-        `currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(swatchAdvanceMm(detail)))} 0 rmoveto`,
+        `currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(swatchAdvanceMm(item)))} 0 rmoveto`,
       );
     }
-    parts.push(`${psString(detail.label)} show`);
+    parts.push(`${psString(item.label)} show`);
     ps.push(parts.join(" "));
   });
   return ps;
@@ -210,14 +197,11 @@ function renderRow(captioned: Captioned[], page: PageNumber, dpi: number): Pdfwr
 function captionedDiff(diff: Bitmap, pallet: Pallet, counts: DiffCounts): Captioned {
   return {
     image: diff,
-    caption: {
-      label: "Diff",
-      details: [
-        { label: `Addition: ${counts.addition}`, color: pallet.addition },
-        { label: `Deletion: ${counts.deletion}`, color: pallet.deletion },
-        { label: `Modification: ${counts.modification}`, color: pallet.modification },
-      ],
-    },
+    caption: [
+      { label: `Addition: ${counts.addition}`, color: pallet.addition },
+      { label: `Deletion: ${counts.deletion}`, color: pallet.deletion },
+      { label: `Modification: ${counts.modification}`, color: pallet.modification },
+    ],
   };
 }
 
@@ -245,8 +229,8 @@ export function renderSideBySidePage(
 ) {
   return renderRow(
     [
-      { image: a.image, caption: { label: "A", details: [{ label: a.name, color: null }] } },
-      { image: b.image, caption: { label: "B", details: [{ label: b.name, color: null }] } },
+      { image: a.image, caption: [{ label: a.name, color: null }] },
+      { image: b.image, caption: [{ label: b.name, color: null }] },
       captionedDiff(diff, pallet, counts),
     ],
     page,
