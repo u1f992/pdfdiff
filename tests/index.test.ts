@@ -44,14 +44,16 @@ void test("visualizeDifferences pins counts for fixtures at dpi 300", async () =
   const b = readFixture("b.pdf");
   const mask = readFixture("mask.pdf");
 
-  const pages: { addition: number; deletion: number; modification: number }[] = [];
+  const pages: { addition: number; deletion: number; modification: number; pageCount: number }[] =
+    [];
   for await (const page of visualizeDifferences(a, b, { dpi: 300, mask })) {
     pages.push({
       addition: page.addition.length,
       deletion: page.deletion.length,
       modification: page.modification.length,
+      pageCount: page.pageCount,
     });
   }
 
-  assert.deepEqual(pages, [{ addition: 7500, deletion: 7500, modification: 7500 }]);
+  assert.deepEqual(pages, [{ addition: 7500, deletion: 7500, modification: 7500, pageCount: 1 }]);
 });

@@ -8,6 +8,7 @@ import {
   renderSideBySidePage,
   type Bitmap,
   type DiffCounts,
+  type PageNumber,
   type PdfwriteJob,
 } from "./pdfwrite.ts";
 import { perf } from "./perf.ts";
@@ -29,6 +30,7 @@ export {
   renderSideBySidePage,
   type Bitmap,
   type DiffCounts,
+  type PageNumber,
   type Pallet,
   type PdfwriteJob,
 };
@@ -48,6 +50,7 @@ type Result = {
   addition: [number, number][];
   deletion: [number, number][];
   modification: [number, number][];
+  pageCount: number;
 };
 
 // Default parallelism scales with the machine: rendering and diffing run across
@@ -84,7 +87,7 @@ function unpackCoords(buf: ArrayBuffer): [number, number][] {
   return out;
 }
 
-function pageResultToResult(msg: PageResultMessage): Result {
+function pageResultToResult(msg: PageResultMessage, pageCount: number): Result {
   const sP = perf.span("main.pageResultToResult_ms");
   const r = {
     a: jimp.Jimp.fromBitmap({
@@ -105,6 +108,7 @@ function pageResultToResult(msg: PageResultMessage): Result {
     addition: unpackCoords(msg.addition),
     deletion: unpackCoords(msg.deletion),
     modification: unpackCoords(msg.modification),
+    pageCount,
   };
   sP.stop();
   perf.incr("main.resultsReceived");
@@ -173,7 +177,7 @@ async function* diffPages(workers: DiffWorker[], maxPages: number) {
       try {
         const pageMsg: PageMessage = { type: "page", index: idx };
         const msg = await w.request<PageResultMessage>(pageMsg);
-        const result = pageResultToResult(msg);
+        const result = pageResultToResult(msg, maxPages);
         const resolve = resolvers.get(idx);
         if (resolve) {
           resolvers.delete(idx);

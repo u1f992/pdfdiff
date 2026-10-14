@@ -18,6 +18,7 @@ import {
   renderDiffPage,
   renderSideBySidePage,
   type DiffCounts,
+  type PageNumber,
   type PdfwriteJob,
 } from "./index.ts";
 import type { JimpInstance } from "./jimp.ts";
@@ -76,8 +77,7 @@ class PngWriterPool {
   }
 }
 
-type Page = {
-  index: number;
+type Page = PageNumber & {
   a: JimpInstance;
   b: JimpInstance;
   diff: JimpInstance;
@@ -94,8 +94,8 @@ function directoryOutput(outDir: string, workers: number): Output {
   const writerPool = new PngWriterPool(workers, new URL("./cli-png-worker.js", import.meta.url));
   const pendingWrites: Promise<void>[] = [];
   return {
-    write({ index, a, b, diff }) {
-      const dir = path.join(outDir, index.toString(10));
+    write({ number, a, b, diff }) {
+      const dir = path.join(outDir, number.toString(10));
       fs.mkdirSync(dir, { recursive: true });
       const sSubmit = perf.span("cli.poolSubmit_ms");
       const aBuf = sliceBackingBuffer(a.bitmap.data);
@@ -294,7 +294,7 @@ const output =
         workers,
         outType === "diff-pdf"
           ? ({ diff }) => renderDiffPage(diff.bitmap, dpi)
-          : ({ a, b, diff, counts }) =>
+          : ({ a, b, diff, counts, number, count }) =>
               renderSideBySidePage(
                 { a: a.bitmap, b: b.bitmap, diff: diff.bitmap },
                 {
@@ -303,13 +303,14 @@ const output =
                   modification: modificationColor,
                 },
                 counts,
+                { number, count },
                 dpi,
               ),
       );
 let hasDiff = false;
 
 const _loopSpan = perf.span("cli.loopWall_ms");
-for await (const [i, { a, b, diff, addition, deletion, modification }] of withIndex(
+for await (const [i, { a, b, diff, addition, deletion, modification, pageCount }] of withIndex(
   visualizeDifferences(pdfA, pdfB, {
     dpi,
     alpha,
@@ -338,7 +339,7 @@ for await (const [i, { a, b, diff, addition, deletion, modification }] of withIn
   if (diffOnly && !pageHasDiff) {
     continue;
   }
-  await output.write({ index: i, a, b, diff, counts });
+  await output.write({ number: i, count: pageCount, a, b, diff, counts });
 }
 await output.close();
 _loopSpan.stop();

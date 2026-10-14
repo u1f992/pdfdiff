@@ -11,8 +11,7 @@ type Bitmap = {
   data: Uint8Array<ArrayBuffer>;
 };
 
-type Page = {
-  index: number;
+type Page = pdfdiff.PageNumber & {
   a: Bitmap;
   b: Bitmap;
   diff: Bitmap;
@@ -38,10 +37,10 @@ async function encodeBitmapToPng({ width, height, data }: Bitmap) {
 function zipOutput(filename: string): Output {
   const files: Record<string, Uint8Array> = {};
   return {
-    async write({ index, a, b, diff }) {
-      files[`${index}/a.png`] = await encodeBitmapToPng(a);
-      files[`${index}/b.png`] = await encodeBitmapToPng(b);
-      files[`${index}/diff.png`] = await encodeBitmapToPng(diff);
+    async write({ number, a, b, diff }) {
+      files[`${number}/a.png`] = await encodeBitmapToPng(a);
+      files[`${number}/b.png`] = await encodeBitmapToPng(b);
+      files[`${number}/diff.png`] = await encodeBitmapToPng(diff);
     },
     async finish() {
       if (Object.keys(files).length === 0) {
@@ -163,11 +162,23 @@ form.addEventListener("submit", async (event) => {
           ? pdfOutput(`pdfdiff-diff${suffix}.pdf`, workers, ({ diff }) =>
               pdfdiff.renderDiffPage(diff, dpi),
             )
-          : pdfOutput(`pdfdiff-a-b-diff${suffix}.pdf`, workers, ({ a, b, diff, counts }) =>
-              pdfdiff.renderSideBySidePage({ a, b, diff }, pallet, counts, dpi),
+          : pdfOutput(
+              `pdfdiff-a-b-diff${suffix}.pdf`,
+              workers,
+              ({ a, b, diff, counts, number, count }) =>
+                pdfdiff.renderSideBySidePage(
+                  { a, b, diff },
+                  pallet,
+                  counts,
+                  { number, count },
+                  dpi,
+                ),
             );
 
-    for await (const [index, { a, b, diff, addition, deletion, modification }] of pdfdiff.withIndex(
+    for await (const [
+      index,
+      { a, b, diff, addition, deletion, modification, pageCount },
+    ] of pdfdiff.withIndex(
       pdfdiff.visualizeDifferences(pdfA, pdfB, {
         dpi,
         alpha,
@@ -187,7 +198,14 @@ form.addEventListener("submit", async (event) => {
       if (diffOnly && !pageHasDiff) {
         continue;
       }
-      await output.write({ index, a: a.bitmap, b: b.bitmap, diff: diff.bitmap, counts });
+      await output.write({
+        number: index,
+        count: pageCount,
+        a: a.bitmap,
+        b: b.bitmap,
+        diff: diff.bitmap,
+        counts,
+      });
     }
 
     submitButton.textContent = "Generating...";

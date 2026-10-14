@@ -34,6 +34,7 @@ export type PdfwriteJob = {
 const MARGIN_MM = 10;
 const FRAME_MM = 0.1;
 const CAPTION_FONT = "NimbusSans-Regular";
+const NIMBUS_SANS_REGULAR_CAP_HEIGHT_EM = 0.729;
 const CAPTION_FONT_MM = 5;
 const CAPTION_GAP_MM = 2;
 const LEGEND_FONT_MM = 3.5;
@@ -41,6 +42,7 @@ const LEGEND_INDENT_MM = 5;
 const LEGEND_SWATCH_MM = 2.5;
 const LEGEND_SWATCH_GAP_MM = 1;
 const LEGEND_ITEM_GAP_MM = 3;
+const PAGE_NUMBER_FONT_MM = 3.5;
 
 const mmToPt = (mm: number) => (mm * 72) / 25.4;
 const pxToPt = (px: number, dpi: number) => (px * 72) / dpi;
@@ -99,12 +101,19 @@ function splitAlpha({ width, height, data: rgba }: Bitmap) {
   return { rgb, alpha: opaque ? null : alpha };
 }
 
+function pageNumberPs(text: string, x: number, capTop: number) {
+  const capHeight = mmToPt(PAGE_NUMBER_FONT_MM) * NIMBUS_SANS_REGULAR_CAP_HEIGHT_EM;
+  const baseline = capTop - capHeight;
+  return `0 setgray ${setFontPs(PAGE_NUMBER_FONT_MM)} ${num(x)} ${num(baseline)} moveto ${psString(text)} show`;
+}
+
 function renderPage(
   pageWidth: number,
   pageHeight: number,
   placements: Placement[],
   frameWidth: number | null,
   captionMargin: number,
+  pageNumber: string | null,
 ): PdfwriteJob {
   const span = perf.span("pdfwrite.renderPage_ms");
   const inputFiles: Record<string, Uint8Array<ArrayBuffer>> = {};
@@ -144,6 +153,10 @@ function renderPage(
       ps.push(...captionPs(caption, x, y + height + mmToPt(CAPTION_GAP_MM)));
     }
   });
+  if (pageNumber !== null) {
+    const frameOutset = frameWidth !== null ? frameWidth / 2 : 0;
+    ps.push(pageNumberPs(pageNumber, captionMargin, pageHeight - captionMargin + frameOutset));
+  }
   ps.push("showpage");
   inputFiles["page.ps"] = new TextEncoder().encode(ps.join("\n"));
   span.stop();
@@ -159,6 +172,7 @@ export function renderDiffPage(diff: Bitmap, dpi: number) {
     [{ image: diff, caption: null, x: 0, y: 0, width, height }],
     null,
     0,
+    null,
   );
 }
 
@@ -168,10 +182,16 @@ export type DiffCounts = {
   modification: number;
 };
 
+export type PageNumber = {
+  number: number;
+  count: number;
+};
+
 export function renderSideBySidePage(
   { a, b, diff }: { a: Bitmap; b: Bitmap; diff: Bitmap },
   pallet: Pallet,
   counts: DiffCounts,
+  page: PageNumber,
   dpi: number,
 ) {
   const captioned: { image: Bitmap; caption: Caption }[] = [
@@ -191,6 +211,7 @@ export function renderSideBySidePage(
   ];
   const margin = mmToPt(MARGIN_MM);
   const captionBand = mmToPt(CAPTION_GAP_MM + CAPTION_FONT_MM);
+  const pageNumberBand = mmToPt(PAGE_NUMBER_FONT_MM + CAPTION_GAP_MM);
   const sizes = captioned.map((c) => ({
     ...c,
     width: pxToPt(c.image.width, dpi),
@@ -203,7 +224,14 @@ export function renderSideBySidePage(
     placements.push({ ...s, x, y: margin + rowHeight - s.height });
     x += s.width + margin;
   }
-  return renderPage(x, rowHeight + captionBand + margin * 2, placements, mmToPt(FRAME_MM), margin);
+  return renderPage(
+    x,
+    rowHeight + captionBand + pageNumberBand + margin * 2,
+    placements,
+    mmToPt(FRAME_MM),
+    margin,
+    `Page ${page.number} / ${page.count}`,
+  );
 }
 
 type PdfwriteWorker = WorkerHandle<PdfwriteMessage, PdfMessage>;
