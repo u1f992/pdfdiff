@@ -4,15 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pdfdiff</title>
-    <!--
-      Earlier deployments of this site registered coi-serviceworker to run
-      cross-origin isolated. Browsers keep that registration until it is
-      unregistered, so visitors from that time still have the old service
-      worker controlling this page.
-    -->
-    <script>
-      navigator.serviceWorker?.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
-    </script>
     <script type="module" src="./browser.js"></script>
   </head>
   <body>
@@ -72,5 +63,23 @@
       <button type="submit" id="submit">Submit</button>
     </form>
     <p id="message"></p>
+    <!--
+      Earlier deployments of this site registered coi-serviceworker to run
+      cross-origin isolated. Browsers keep that registration until it is
+      unregistered, so visitors from that time still have the old service
+      worker controlling this page.
+    -->
+    <script>
+      navigator.serviceWorker?.getRegistrations().then(async (registrations) => {
+        for (const registration of registrations) {
+          const worker = registration.active ?? registration.waiting ?? registration.installing;
+          const unregistered = await registration.unregister();
+          if (unregistered && worker?.scriptURL.includes("/coi-serviceworker")) {
+            document.getElementById("message").textContent =
+              "A service worker left by an earlier version of this site was removed. Reload the page before submitting.";
+          }
+        }
+      });
+    </script>
   </body>
 </html>

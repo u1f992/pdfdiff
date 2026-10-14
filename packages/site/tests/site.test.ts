@@ -17,9 +17,16 @@ const contentTypes: Record<string, string> = {
   ".wasm": "application/wasm",
 };
 
+const oldServiceWorkerPath = "/coi-serviceworker.min.js";
+
 function serveDist(): Promise<http.Server> {
   const server = http.createServer((req, res) => {
     const { pathname } = new URL(req.url ?? "/", "http://localhost");
+    if (pathname === oldServiceWorkerPath) {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end("self.addEventListener('fetch', () => {});");
+      return;
+    }
     const file = path.join(dist, pathname === "/" ? "index.html" : pathname);
     let body: Buffer;
     try {
@@ -78,6 +85,28 @@ void test("shows the library version", async () => {
   await page.goto(origin);
   assert.match(await page.locator("#version").innerText(), /^v\d+\.\d+\.\d+/);
   await page.close();
+});
+
+void test("removes the old service worker and asks for a reload once", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.evaluate(async (script) => {
+    await navigator.serviceWorker.register(script);
+    await navigator.serviceWorker.ready;
+  }, oldServiceWorkerPath);
+
+  await page.reload();
+  await page.getByText("Reload the page before submitting.").waitFor({ timeout: 10_000 });
+
+  await page.reload();
+  await page.waitForFunction(
+    () => navigator.serviceWorker.getRegistrations().then((rs) => rs.length === 0),
+    undefined,
+    { timeout: 10_000 },
+  );
+  assert.equal(await page.locator("#message").innerText(), "");
+  await context.close();
 });
 
 void test("a-b-diff-pdf downloads a PDF", async () => {
