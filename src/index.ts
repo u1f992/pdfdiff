@@ -1,7 +1,6 @@
 import * as jimp from "jimp";
 
 import { type Pallet } from "./diff.ts";
-import { isValidAlignStrategy, type AlignStrategy } from "./image.ts";
 import { withIndex } from "./iterable.ts";
 import {
   PdfBuilder,
@@ -21,7 +20,6 @@ import type { InitMessage, PageMessage, PageResultMessage, ReadyMessage } from "
 
 export {
   withIndex,
-  isValidAlignStrategy,
   parseHex,
   formatHex,
   perf,
@@ -39,7 +37,6 @@ type Options = {
   dpi: number;
   alpha: boolean;
   mask: Uint8Array | undefined;
-  align: AlignStrategy;
   pallet: Pallet;
   workers: number;
 };
@@ -68,7 +65,6 @@ export const defaultOptions: Options = {
   dpi: 72,
   alpha: true,
   mask: undefined,
-  align: "resize",
   pallet: {
     addition: [0x4c, 0xae, 0x4f, 0xff],
     deletion: [0xff, 0x57, 0x24, 0xff],
@@ -125,7 +121,6 @@ export async function* visualizeDifferences(
     dpi: options?.dpi ?? defaultOptions.dpi,
     alpha: options?.alpha ?? defaultOptions.alpha,
     mask: options?.mask ?? defaultOptions.mask,
-    align: options?.align ?? defaultOptions.align,
     pallet: {
       addition: options?.pallet?.addition ?? defaultOptions.pallet.addition,
       deletion: options?.pallet?.deletion ?? defaultOptions.pallet.deletion,
@@ -137,7 +132,6 @@ export async function* visualizeDifferences(
   const initMsg: InitMessage = {
     type: "init",
     pallet: merged.pallet,
-    align: merged.align,
     dpi: merged.dpi,
     alpha: merged.alpha,
     a: sliceBackingBuffer(a),

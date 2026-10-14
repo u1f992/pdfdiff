@@ -7,7 +7,6 @@ import {
   defaultWorkers,
   defaultWorkersCap,
   formatHex,
-  isValidAlignStrategy,
   parseHex,
   visualizeDifferences,
   withIndex,
@@ -18,7 +17,6 @@ const readFixture = (name: string) => new Uint8Array(fs.readFileSync(new URL(nam
 
 void test("re-exports are exposed as runtime values", () => {
   assert.equal(typeof withIndex, "function");
-  assert.equal(typeof isValidAlignStrategy, "function");
   assert.equal(typeof parseHex, "function");
   assert.equal(typeof formatHex, "function");
 });
@@ -28,7 +26,6 @@ void test("defaultOptions", () => {
     dpi: 72,
     alpha: true,
     mask: undefined,
-    align: "resize",
     pallet: {
       addition: [0x4c, 0xae, 0x4f, 0xff],
       deletion: [0xff, 0x57, 0x24, 0xff],
@@ -40,28 +37,6 @@ void test("defaultOptions", () => {
 
 void test("defaultWorkers is the logical CPU count, capped", () => {
   assert.equal(defaultWorkers, Math.min(navigator.hardwareConcurrency, defaultWorkersCap));
-});
-
-void test("isValidAlignStrategy", async (ctx) => {
-  for (const s of [
-    "resize",
-    "top-left",
-    "top-center",
-    "top-right",
-    "middle-left",
-    "middle-center",
-    "middle-right",
-    "bottom-left",
-    "bottom-center",
-    "bottom-right",
-  ]) {
-    await ctx.test(s, () => {
-      assert.equal(isValidAlignStrategy(s), true);
-    });
-  }
-  await ctx.test("invalid", () => {
-    assert.equal(isValidAlignStrategy("invalid"), false);
-  });
 });
 
 void test("visualizeDifferences pins counts for fixtures at dpi 300", async () => {

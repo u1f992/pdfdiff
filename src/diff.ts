@@ -1,5 +1,5 @@
 import { type JimpInstance } from "./jimp.ts";
-import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
+import { alignSize, createEmptyImage } from "./image.ts";
 import { perf } from "./perf.ts";
 import { type RGBAColor } from "./rgba-color.ts";
 
@@ -14,16 +14,15 @@ export function drawDifference(
   b: JimpInstance,
   mask: JimpInstance | null,
   pallet: Readonly<Pallet>,
-  align: AlignStrategy,
 ) {
   const sAlign = perf.span("diff.align_ms");
   let aNew: JimpInstance;
   let bNew: JimpInstance;
   let maskNew: JimpInstance | null;
   if (mask !== null) {
-    [aNew, bNew, maskNew] = alignSize([a, b, mask], align);
+    [aNew, bNew, maskNew] = alignSize([a, b, mask]);
   } else {
-    [aNew, bNew] = alignSize([a, b], align);
+    [aNew, bNew] = alignSize([a, b]);
     maskNew = null;
   }
   sAlign.stop();

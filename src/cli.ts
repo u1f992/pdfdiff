@@ -7,7 +7,6 @@ import { Worker as ThreadWorker } from "node:worker_threads";
 
 import type { EncodeJob, EncodeReply } from "./cli-png-worker.ts";
 import {
-  isValidAlignStrategy,
   defaultOptions,
   defaultWorkersCap,
   withIndex,
@@ -179,7 +178,6 @@ const {
     dpi: dpi_,
     alpha: alpha_,
     mask: mask_,
-    align: align_,
     "addition-color": additionColorHex,
     "deletion-color": deletionColorHex,
     "modification-color": modificationColorHex,
@@ -196,7 +194,6 @@ const {
     dpi: { type: "string" },
     alpha: { type: "boolean" },
     mask: { type: "string" },
-    align: { type: "string" },
     "addition-color": { type: "string" },
     "deletion-color": { type: "string" },
     "modification-color": { type: "string" },
@@ -217,9 +214,6 @@ OPTIONS:
     --dpi <DPI>                    default: ${defaultOptions.dpi}
     --alpha                        default: ${defaultOptions.alpha}
     --mask <PATH>                  default: ${String(defaultOptions.mask)}
-    --align <resize | top-left | top-center | top-right
-             | middle-left | middle-center | middle-right
-             | bottom-left | bottom-center | bottom-right>    default: ${defaultOptions.align}
     --addition-color <#HEX>        default: ${formatHex(defaultOptions.pallet.addition)}
     --deletion-color <#HEX>        default: ${formatHex(defaultOptions.pallet.deletion)}
     --modification-color <#HEX>    default: ${formatHex(defaultOptions.pallet.modification)}
@@ -262,11 +256,6 @@ if (Number.isNaN(dpi)) {
 const alpha = alpha_ ?? defaultOptions.alpha;
 
 const pdfMask = typeof mask_ !== "undefined" ? fs.readFileSync(path.resolve(mask_)) : undefined;
-
-const align = align_ ?? defaultOptions.align;
-if (!isValidAlignStrategy(align)) {
-  throw new Error(`Invalid alignment strategy`);
-}
 
 const additionColor =
   typeof additionColorHex !== "undefined"
@@ -325,7 +314,6 @@ for await (const [i, { a, b, diff, addition, deletion, modification }] of withIn
     dpi,
     alpha,
     mask: pdfMask,
-    align,
     pallet: {
       addition: additionColor,
       deletion: deletionColor,

@@ -27,57 +27,17 @@ export function fillWithEmpty(images: (JimpInstance | null)[]): JimpInstance[] {
   return images.map((img) => (img !== null ? img : createEmptyImage(1, 1)));
 }
 
-const alignStrategyValues = new Set([
-  "resize",
-  "top-left",
-  "top-center",
-  "top-right",
-  "middle-left",
-  "middle-center",
-  "middle-right",
-  "bottom-left",
-  "bottom-center",
-  "bottom-right",
-] as const);
-type UnwrapSet<T> = T extends Set<infer U> ? U : never;
-export type AlignStrategy = UnwrapSet<typeof alignStrategyValues>;
-export const isValidAlignStrategy = (str: string): str is AlignStrategy =>
-  (alignStrategyValues as Set<string>).has(str);
-
-function alignImage(
-  img: JimpInstance,
-  targetWidth: number,
-  targetHeight: number,
-  align: AlignStrategy,
-): JimpInstance {
-  if (align === "resize") {
-    return img.resize({ w: targetWidth, h: targetHeight });
-  } else {
-    const newImg = createEmptyImage(targetWidth, targetHeight);
-    const x = align.includes("center")
-      ? Math.floor((targetWidth - img.width) / 2)
-      : align.includes("right")
-        ? targetWidth - img.width
-        : 0;
-    const y = align.includes("middle")
-      ? Math.floor((targetHeight - img.height) / 2)
-      : align.includes("bottom")
-        ? targetHeight - img.height
-        : 0;
-    newImg.composite(img, x, y);
-    return newImg;
-  }
+function padTopLeft(img: JimpInstance, width: number, height: number): JimpInstance {
+  const padded = createEmptyImage(width, height);
+  padded.composite(img, 0, 0);
+  return padded;
 }
 
-export function alignSize(
-  images: [JimpInstance, JimpInstance],
-  align: AlignStrategy,
-): [JimpInstance, JimpInstance];
+export function alignSize(images: [JimpInstance, JimpInstance]): [JimpInstance, JimpInstance];
 export function alignSize(
   images: [JimpInstance, JimpInstance, JimpInstance],
-  align: AlignStrategy,
 ): [JimpInstance, JimpInstance, JimpInstance];
-export function alignSize(images: JimpInstance[], align: AlignStrategy): JimpInstance[] {
+export function alignSize(images: JimpInstance[]): JimpInstance[] {
   if (images.length === 0) {
     return [];
   }
@@ -86,7 +46,7 @@ export function alignSize(images: JimpInstance[], align: AlignStrategy): JimpIns
   return images.map((img) =>
     img.width === largerWidth && img.height === largerHeight
       ? img
-      : alignImage(img, largerWidth, largerHeight, align),
+      : padTopLeft(img, largerWidth, largerHeight),
   );
 }
 

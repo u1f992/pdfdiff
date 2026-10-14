@@ -1,6 +1,6 @@
 import { decodePng } from "./decode.ts";
 import { type Pallet } from "./diff.ts";
-import { alignSize, createEmptyImage, type AlignStrategy } from "./image.ts";
+import { alignSize, createEmptyImage } from "./image.ts";
 import type { JimpInstance } from "./jimp.ts";
 import { PdfRenderer, type DocumentName } from "./pdf.ts";
 import { perf, type Counters } from "./perf.ts";
@@ -12,7 +12,6 @@ import type { ErrorMessage } from "./worker-handle.ts";
 export type InitMessage = {
   type: "init";
   pallet: Pallet;
-  align: AlignStrategy;
   dpi: number;
   alpha: boolean;
   a: ArrayBufferLike;
@@ -53,7 +52,6 @@ type WasmProcessResult = {
 
 let opts: {
   pallet: Pallet;
-  align: AlignStrategy;
   renderer: PdfRenderer;
   pages: PageCounts;
 };
@@ -83,7 +81,7 @@ async function init(msg: InitMessage): Promise<ReadyMessage> {
     b: await renderer.countPages("b"),
     mask: msg.mask !== null ? await renderer.countPages("mask") : 0,
   };
-  opts = { pallet: msg.pallet, align: msg.align, renderer, pages };
+  opts = { pallet: msg.pallet, renderer, pages };
   return { type: "ready", pages };
 }
 
@@ -109,9 +107,9 @@ async function processPage(msg: PageMessage): Promise<PageResultMessage> {
   let bAligned: JimpInstance;
   let maskAligned: JimpInstance | null;
   if (pageMaskOrNull !== null) {
-    [aAligned, bAligned, maskAligned] = alignSize([pageA, pageB, pageMaskOrNull], opts.align);
+    [aAligned, bAligned, maskAligned] = alignSize([pageA, pageB, pageMaskOrNull]);
   } else {
-    [aAligned, bAligned] = alignSize([pageA, pageB], opts.align);
+    [aAligned, bAligned] = alignSize([pageA, pageB]);
     maskAligned = null;
   }
   sAlign.stop();

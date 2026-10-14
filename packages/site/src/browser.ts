@@ -139,10 +139,6 @@ form.addEventListener("submit", async (event) => {
       throw new Error("Invalid DPI value");
     }
     const alpha = field<HTMLInputElement>("alpha").checked;
-    const align = field<HTMLSelectElement>("align").value;
-    if (!pdfdiff.isValidAlignStrategy(align)) {
-      throw new Error("Invalid alignment strategy");
-    }
     const workersRaw = field<HTMLInputElement>("workers").value;
     const workers = workersRaw ? parseInt(workersRaw, 10) : pdfdiff.defaultOptions.workers;
     if (Number.isNaN(workers) || workers < 1) {
@@ -176,7 +172,6 @@ form.addEventListener("submit", async (event) => {
         dpi,
         alpha,
         mask: pdfMask,
-        align,
         pallet,
         workers,
       }),
