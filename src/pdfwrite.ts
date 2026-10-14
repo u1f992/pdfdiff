@@ -12,9 +12,14 @@ export type Bitmap = {
   data: Uint8Array | Uint8ClampedArray;
 };
 
+type LegendItem = {
+  label: string;
+  color: RGBAColor | null;
+};
+
 type Caption = {
   label: string;
-  legend: { label: string; color: RGBAColor }[];
+  legend: LegendItem[];
 };
 
 type Placement = {
@@ -52,11 +57,12 @@ const setFontPs = (sizeMm: number) =>
   `/${CAPTION_FONT} findfont ${num(mmToPt(sizeMm))} scalefont setfont`;
 
 const legendItemGapMm = (i: number) => (i === 0 ? LEGEND_INDENT_MM : LEGEND_ITEM_GAP_MM);
-const legendSwatchAdvanceMm = LEGEND_SWATCH_MM + LEGEND_SWATCH_GAP_MM;
+const legendSwatchAdvanceMm = ({ color }: LegendItem) =>
+  color !== null ? LEGEND_SWATCH_MM + LEGEND_SWATCH_GAP_MM : 0;
 
 function captionRightEdgePs({ label, legend }: Caption, x: number) {
   const fixed = legend.reduce(
-    (acc, _, i) => acc + mmToPt(legendItemGapMm(i) + legendSwatchAdvanceMm),
+    (acc, item, i) => acc + mmToPt(legendItemGapMm(i) + legendSwatchAdvanceMm(item)),
     x,
   );
   const textWidth = (s: string) => `${psString(s)} stringwidth pop add`;
@@ -77,11 +83,17 @@ function captionPs({ label, legend }: Caption, x: number, baseline: number) {
   if (legend.length > 0) {
     ps.push(setFontPs(LEGEND_FONT_MM));
   }
-  legend.forEach(({ label, color: [r, g, b, a] }, i) => {
-    const rgb = [r, g, b].map((c) => num(c / 255)).join(" ");
-    ps.push(
-      `${num(mmToPt(legendItemGapMm(i)))} 0 rmoveto currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(legendSwatchAdvanceMm))} 0 rmoveto ${psString(label)} show`,
-    );
+  legend.forEach((item, i) => {
+    const parts = [`${num(mmToPt(legendItemGapMm(i)))} 0 rmoveto`];
+    if (item.color !== null) {
+      const [r, g, b, a] = item.color;
+      const rgb = [r, g, b].map((c) => num(c / 255)).join(" ");
+      parts.push(
+        `currentpoint gsave ${num(a / 255)} .setfillconstantalpha ${rgb} setrgbcolor ${swatch} ${swatch} rectfill grestore ${num(mmToPt(legendSwatchAdvanceMm(item)))} 0 rmoveto`,
+      );
+    }
+    parts.push(`${psString(item.label)} show`);
+    ps.push(parts.join(" "));
   });
   return ps;
 }
@@ -219,8 +231,13 @@ export function renderDiffPage(
   return renderRow([captionedDiff(diff, pallet, counts)], page, dpi);
 }
 
+export type NamedBitmap = {
+  image: Bitmap;
+  name: string;
+};
+
 export function renderSideBySidePage(
-  { a, b, diff }: { a: Bitmap; b: Bitmap; diff: Bitmap },
+  { a, b, diff }: { a: NamedBitmap; b: NamedBitmap; diff: Bitmap },
   pallet: Pallet,
   counts: DiffCounts,
   page: PageNumber,
@@ -228,8 +245,8 @@ export function renderSideBySidePage(
 ) {
   return renderRow(
     [
-      { image: a, caption: { label: "A", legend: [] } },
-      { image: b, caption: { label: "B", legend: [] } },
+      { image: a.image, caption: { label: "A", legend: [{ label: a.name, color: null }] } },
+      { image: b.image, caption: { label: "B", legend: [{ label: b.name, color: null }] } },
       captionedDiff(diff, pallet, counts),
     ],
     page,

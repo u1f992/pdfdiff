@@ -244,8 +244,10 @@ if (positionals.length !== 3) {
   throw new Error("Expected 3 positional arguments: <A> <B> <OUT>");
 }
 
-const pdfA = fs.readFileSync(path.resolve(positionals[0]!));
-const pdfB = fs.readFileSync(path.resolve(positionals[1]!));
+const pathA = path.resolve(positionals[0]!);
+const pathB = path.resolve(positionals[1]!);
+const pdfA = fs.readFileSync(pathA);
+const pdfB = fs.readFileSync(pathB);
 const outPath = path.resolve(positionals[2]!);
 
 const dpi = typeof dpi_ !== "undefined" ? parseInt(dpi_, 10) : defaultOptions.dpi;
@@ -303,7 +305,11 @@ const output =
               renderDiffPage(diff.bitmap, pallet, counts, { number, count }, dpi)
           : ({ a, b, diff, counts, number, count }) =>
               renderSideBySidePage(
-                { a: a.bitmap, b: b.bitmap, diff: diff.bitmap },
+                {
+                  a: { image: a.bitmap, name: path.basename(pathA) },
+                  b: { image: b.bitmap, name: path.basename(pathB) },
+                  diff: diff.bitmap,
+                },
                 pallet,
                 counts,
                 { number, count },

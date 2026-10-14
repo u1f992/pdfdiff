@@ -167,7 +167,11 @@ form.addEventListener("submit", async (event) => {
               workers,
               ({ a, b, diff, counts, number, count }) =>
                 pdfdiff.renderSideBySidePage(
-                  { a, b, diff },
+                  {
+                    a: { image: a, name: pdfAFile.name },
+                    b: { image: b, name: pdfBFile.name },
+                    diff,
+                  },
                   pallet,
                   counts,
                   { number, count },
