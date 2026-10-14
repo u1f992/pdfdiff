@@ -159,8 +159,8 @@ form.addEventListener("submit", async (event) => {
       outType === "zip"
         ? zipOutput(`pdfdiff-result${suffix}.zip`)
         : outType === "diff-pdf"
-          ? pdfOutput(`pdfdiff-diff${suffix}.pdf`, workers, ({ diff }) =>
-              pdfdiff.renderDiffPage(diff, dpi),
+          ? pdfOutput(`pdfdiff-diff${suffix}.pdf`, workers, ({ diff, counts, number, count }) =>
+              pdfdiff.renderDiffPage(diff, pallet, counts, { number, count }, dpi),
             )
           : pdfOutput(
               `pdfdiff-a-b-diff${suffix}.pdf`,

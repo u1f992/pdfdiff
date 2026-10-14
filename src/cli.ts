@@ -286,6 +286,12 @@ if (!isOutType(outType)) {
 const exitCodeOnDiff = exitCode_ ?? false;
 const diffOnly = diffOnly_ ?? false;
 
+const pallet = {
+  addition: additionColor,
+  deletion: deletionColor,
+  modification: modificationColor,
+};
+
 const output =
   outType === "directory"
     ? directoryOutput(outPath, workers)
@@ -293,15 +299,12 @@ const output =
         outPath,
         workers,
         outType === "diff-pdf"
-          ? ({ diff }) => renderDiffPage(diff.bitmap, dpi)
+          ? ({ diff, counts, number, count }) =>
+              renderDiffPage(diff.bitmap, pallet, counts, { number, count }, dpi)
           : ({ a, b, diff, counts, number, count }) =>
               renderSideBySidePage(
                 { a: a.bitmap, b: b.bitmap, diff: diff.bitmap },
-                {
-                  addition: additionColor,
-                  deletion: deletionColor,
-                  modification: modificationColor,
-                },
+                pallet,
                 counts,
                 { number, count },
                 dpi,
@@ -315,11 +318,7 @@ for await (const [i, { a, b, diff, addition, deletion, modification, pageCount }
     dpi,
     alpha,
     mask: pdfMask,
-    pallet: {
-      addition: additionColor,
-      deletion: deletionColor,
-      modification: modificationColor,
-    },
+    pallet,
     workers,
   }),
   1,

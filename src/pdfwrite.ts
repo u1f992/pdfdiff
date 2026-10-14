@@ -19,7 +19,7 @@ type Caption = {
 
 type Placement = {
   image: Bitmap;
-  caption: Caption | null;
+  caption: Caption;
   x: number;
   y: number;
   width: number;
@@ -111,19 +111,17 @@ function renderPage(
   pageWidth: number,
   pageHeight: number,
   placements: Placement[],
-  frameWidth: number | null,
-  captionMargin: number,
-  pageNumber: string | null,
+  pageNumber: PageNumber,
 ): PdfwriteJob {
   const span = perf.span("pdfwrite.renderPage_ms");
+  const margin = mmToPt(MARGIN_MM);
+  const frameWidth = mmToPt(FRAME_MM);
   const inputFiles: Record<string, Uint8Array<ArrayBuffer>> = {};
   const ps = [`/pageWidth ${num(pageWidth)} def`];
   for (const { caption, x } of placements) {
-    if (caption !== null) {
-      ps.push(
-        `${captionRightEdgePs(caption, x)} ${num(captionMargin)} add dup pageWidth gt { /pageWidth exch def } { pop } ifelse`,
-      );
-    }
+    ps.push(
+      `${captionRightEdgePs(caption, x)} ${num(margin)} add dup pageWidth gt { /pageWidth exch def } { pop } ifelse`,
+    );
   }
   ps.push(`<< /PageSize [pageWidth ${num(pageHeight)}] >> setpagedevice`);
   placements.forEach(({ image, caption, x, y, width, height }, i) => {
@@ -144,36 +142,22 @@ function renderPage(
       );
     }
     ps.push("grestore");
-    if (frameWidth !== null) {
-      ps.push(
-        `0 setgray ${num(frameWidth)} setlinewidth ${num(x - frameWidth / 2)} ${num(y - frameWidth / 2)} ${num(width + frameWidth)} ${num(height + frameWidth)} rectstroke`,
-      );
-    }
-    if (caption !== null) {
-      ps.push(...captionPs(caption, x, y + height + mmToPt(CAPTION_GAP_MM)));
-    }
+    ps.push(
+      `0 setgray ${num(frameWidth)} setlinewidth ${num(x - frameWidth / 2)} ${num(y - frameWidth / 2)} ${num(width + frameWidth)} ${num(height + frameWidth)} rectstroke`,
+    );
+    ps.push(...captionPs(caption, x, y + height + mmToPt(CAPTION_GAP_MM)));
   });
-  if (pageNumber !== null) {
-    const frameOutset = frameWidth !== null ? frameWidth / 2 : 0;
-    ps.push(pageNumberPs(pageNumber, captionMargin, pageHeight - captionMargin + frameOutset));
-  }
+  ps.push(
+    pageNumberPs(
+      `Page ${pageNumber.number} / ${pageNumber.count}`,
+      margin,
+      pageHeight - margin + frameWidth / 2,
+    ),
+  );
   ps.push("showpage");
   inputFiles["page.ps"] = new TextEncoder().encode(ps.join("\n"));
   span.stop();
   return { args: ["-dALLOWPSTRANSPARENCY", "page.ps"], inputFiles };
-}
-
-export function renderDiffPage(diff: Bitmap, dpi: number) {
-  const width = pxToPt(diff.width, dpi);
-  const height = pxToPt(diff.height, dpi);
-  return renderPage(
-    width,
-    height,
-    [{ image: diff, caption: null, x: 0, y: 0, width, height }],
-    null,
-    0,
-    null,
-  );
 }
 
 export type DiffCounts = {
@@ -187,28 +171,12 @@ export type PageNumber = {
   count: number;
 };
 
-export function renderSideBySidePage(
-  { a, b, diff }: { a: Bitmap; b: Bitmap; diff: Bitmap },
-  pallet: Pallet,
-  counts: DiffCounts,
-  page: PageNumber,
-  dpi: number,
-) {
-  const captioned: { image: Bitmap; caption: Caption }[] = [
-    { image: a, caption: { label: "A", legend: [] } },
-    { image: b, caption: { label: "B", legend: [] } },
-    {
-      image: diff,
-      caption: {
-        label: "Diff",
-        legend: [
-          { label: `Addition: ${counts.addition}`, color: pallet.addition },
-          { label: `Deletion: ${counts.deletion}`, color: pallet.deletion },
-          { label: `Modification: ${counts.modification}`, color: pallet.modification },
-        ],
-      },
-    },
-  ];
+type Captioned = {
+  image: Bitmap;
+  caption: Caption;
+};
+
+function renderRow(captioned: Captioned[], page: PageNumber, dpi: number): PdfwriteJob {
   const margin = mmToPt(MARGIN_MM);
   const captionBand = mmToPt(CAPTION_GAP_MM + CAPTION_FONT_MM);
   const pageNumberBand = mmToPt(PAGE_NUMBER_FONT_MM + CAPTION_GAP_MM);
@@ -224,13 +192,48 @@ export function renderSideBySidePage(
     placements.push({ ...s, x, y: margin + rowHeight - s.height });
     x += s.width + margin;
   }
-  return renderPage(
-    x,
-    rowHeight + captionBand + pageNumberBand + margin * 2,
-    placements,
-    mmToPt(FRAME_MM),
-    margin,
-    `Page ${page.number} / ${page.count}`,
+  return renderPage(x, rowHeight + captionBand + pageNumberBand + margin * 2, placements, page);
+}
+
+function captionedDiff(diff: Bitmap, pallet: Pallet, counts: DiffCounts): Captioned {
+  return {
+    image: diff,
+    caption: {
+      label: "Diff",
+      legend: [
+        { label: `Addition: ${counts.addition}`, color: pallet.addition },
+        { label: `Deletion: ${counts.deletion}`, color: pallet.deletion },
+        { label: `Modification: ${counts.modification}`, color: pallet.modification },
+      ],
+    },
+  };
+}
+
+export function renderDiffPage(
+  diff: Bitmap,
+  pallet: Pallet,
+  counts: DiffCounts,
+  page: PageNumber,
+  dpi: number,
+) {
+  return renderRow([captionedDiff(diff, pallet, counts)], page, dpi);
+}
+
+export function renderSideBySidePage(
+  { a, b, diff }: { a: Bitmap; b: Bitmap; diff: Bitmap },
+  pallet: Pallet,
+  counts: DiffCounts,
+  page: PageNumber,
+  dpi: number,
+) {
+  return renderRow(
+    [
+      { image: a, caption: { label: "A", legend: [] } },
+      { image: b, caption: { label: "B", legend: [] } },
+      captionedDiff(diff, pallet, counts),
+    ],
+    page,
+    dpi,
   );
 }
 
