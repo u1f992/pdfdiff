@@ -190,6 +190,7 @@ const {
   },
 } = util.parseArgs({
   allowPositionals: true,
+  allowNegative: true,
   options: {
     dpi: { type: "string" },
     alpha: { type: "boolean" },
